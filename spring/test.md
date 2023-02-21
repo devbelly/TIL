@@ -1,4 +1,5 @@
 object GlobalScope : CoroutineScope {
-    override val coroutineContext: CoroutineContext
-        get() = EmptyCoroutineContext
+override val coroutineContext: CoroutineContext
+get() = EmptyCoroutineContext
 }
+.
