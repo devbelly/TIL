@@ -77,6 +77,9 @@
   member.setTeam(team)
   jpa.persist(member)
   ```
+  - FK를 관리하는 쪽, 연관관계의 주인인 객체에 `setTeam()`와 같이 연관관계를 설정하면 데이터베이스에 저장시 FK를 갖게 된다.
+  - 그렇다면 주인이 아닌쪽은 `team.addmember()`와 같은 연관관계를 설정할 필요가 없는걸까?
+    - 데이터베이스에는 영향을 미치지 않더라도 애플리케이션을 객체지향적으로 다루기 위해 논리적으로 연관관계를 설정해주는 것이 옳다.
 - JPA를 사용하기 이전, 조회를 하려면 `MEMBER`와 `TEAM` 테이블을 JOIN해서 정보들을 확인하고 객체들을 생성한 다음 직접 연관관계를 설정해주어야 한다.
   ```java
   // SQL 실행
@@ -241,7 +244,7 @@ pulbic class JpaMain {
   
 <br>
 
-# 영속성 관리
+# 3장, 영속성 관리
 
 ## 엔티티 매니저 팩토리와 엔티티 매니저
 
@@ -306,4 +309,246 @@ pulbic class JpaMain {
   - 앞에서 설명한대로 동등성은 객체가 가지고 있는 값이 일치하는 것을 의미한다.
 
 ### 엔티티 등록
+
+- 엔티티 매니저를 사용해서 엔티티를 영속성 컨텍스트에 등록해보자
+
+  ```java
+  EntityManager em = emf.createEntityManager();
+  EntityTransaction tx = em.getTransaction();
+
+  tx.begin();
+
+  em.persist(memberA);
+  em.persist(memberB);
+
+  //커밋을 하는 시점에 데이터베이스에 INSERT SQL을 전송한다.
+  tx.commit();
+  ```
+
+- JPA는 쓰기 지연 저장소를 통해 커밋 전까지 SQL을 전송하지 않는다.
+- 위 코드를 실행하면 1차 캐시에 memberA, memberB가 저장되고 쓰기 지연 저장소에 쿼리가 저장된다
+
+  <img width="655" alt="image" src="https://user-images.githubusercontent.com/67682840/232691156-3b627057-2509-4531-b6fd-0ce8966284ae.png">
+
+- 이후 트랜잭션을 커밋하면 영속성 컨텍스트를 flush 한다
+
+  ![image](https://user-images.githubusercontent.com/67682840/232696986-f413d506-b8c3-4162-8f97-25c72ecafb49.png)
+
+### 엔티티 수정
+
+- JPA는 변경 감지를 통해 엔티티를 수정한다.
+
+  ```java
+  EntityManager em = emf.createEntityManager();
+  EntityTransaction tx = em.getTransaction();
+  
+  tx.begin();
+
+  Member memberA = em.find(Member.class,"memberA");
+  memberA.setUsername("hi");
+
+  //em.update(memberA) 필요할까?
+
+  tx.commit();
+  ```
+
+- 엔티티를 수정하기 위해선 단지 엔티티를 조회해서 데이터만 변경하면 된다.
+- `em.update`가 필요할 것 같지만 필요하지 않다.
+
+#### 변경감지
+
+- 변경감지는 아래 순서
+  - 영속성 컨텍스트는 영속 시점에 스냅샷을 저장한다
+  - `flush()` 호출
+  - 1차 캐시와 스냅샷을 비교하여 변경된 부분에 대해 UPDATE SQL을 생성
+  - 생성한 SQL을 쓰기 지연 저장소에 저장
+  - 데이터베이스에 SQL 전송
+
+- 생성된 UPDATE SQL은 수정한 컬럼만 반영할까?
+
+  ```sql
+  UPDATE MEMBER -- 이런식으로 쿼리가 생성될까?
+  SET
+    NAME = ?
+  WHERE
+    id = ?
+  ```
+
+- JPA 기본전략은 수정하지 않은 모든 컬럼들을 업데이트 한다. 즉 수정 쿼리는 다음과 같이 생겼다.
+
+  ```sql
+  UPDATE MEMBER
+  SET
+    NAME = ?,
+    AGE = ?,
+    ...
+  WHERE
+    id = ?
+  ```
+
+- 모든 필드를 업데이트 하는 전략의 장점
+  - 한 테이블에 대해 업데이트 쿼리 문장이 동일하므로 애플리케이션 로딩 시점에 미리 수정쿼리를 생성해 사용할 수 있다.
+  - 데이터베이스에 동일한 쿼리를 보내면 데이터베이스는 이전에 파싱한 쿼리를 재사용할 수 있다.
+    - chatgpt에선 데이터베이스는 최적화 기술로 쿼리 캐싱과 파싱된 쿼리 전략을 사용하는데 전달되는 파라미터가 달라지면 이러한 최적화 기능들이 제한된다고 설명한다
+  
+- 필요하다면 하이버네이트에서 제공하는 `@DynamicUpdate`를 사용하면 된다.
+  - 테이블의 필드가 30개 이상 넘어가면 동적 쿼리가 성능상 이점을 제공할 수도 있다
+  - 하지만 테이블 필드가 30개 이상 넘어가는 것은 설계상의 문제일 가능성도 있다.
+
+### 엔티티 삭제
+
+- 삭제를 위해선 엔티티를 조회한 후 삭제하면 된다.
+
+  ```java
+  Member memberA = em.find(Member.class,"memberA");
+  em.remove(memberA)
+  ```
+
+- 업데이트 쿼리와 마찬가지로 삭제 쿼리를 쓰기 지연 저장소에 저장한 후 플러시 시점에 반영된다.
+
+## 플러시
+
+- 플러시는 영속성 컨텍스트의 변경내용을 데이터베이스에 반영하는 것. 실행 시 다음과 같은 일이 발생한다
+  - 1차캐시와 스냅샷을 비교하여 UPDATE SQL을 생성한다
+  - 쓰기 지연 저장소에 있는 SQL을 데이터베이스에 전송한다.
+
+- 플러시는 아래 상황에서 발생한다
+  - 강제로 `em.flush()` 호출
+  - 트랜잭션 커밋 시
+  - JPQL 실행시
+
+- JPQL 실행 시 왜 `flush()`가 발생할까?
+
+  ```java
+  em.persist(memberA);
+  em.persist(memberB);
+  em.persist(memberC);
+
+  query = em.createQuery("Select m from Member m",Member.class);
+  List<Member> list = query.getResultList();
+  ```
+
+  - 객체 3개를 생성해서 persist하면 영속성 컨텍스트에는 존재하지만 데이터베이스에는 존재하지 않는다
+  - 이때 JPQL을 실행하면 SQL로 바뀌어 데이터베이스에 질의를 날리게 되는데 데이터베이스에는 값이 없으므로 제대로 된 결과를 얻을 수 없다
+  - 즉 JPQL 실행 전 자동으로 `em.flush()`를 호출한다
+
+### 플러시모드 옵션
+
+- 엔티티 매니저의 옵션으로 플러시모드를 직접 설정할 수 있다.
+  - FlushMode.AUTO: 커밋을 하거나 쿼리 실행시 플러시가 발생한다
+  - FlushMode.COMMIT: 커밋시 플러시가 발생한다
+- 쿼리 실행시는 다음과 같다
+  - JPQL
+  - Criteria API
+  - Native SQL
+- 플러시를 하면 영속성 컨텍스트가 초기화되는 것이 아니라 데이터베이스에 동기화 된다는 점을 생각하자!
+
+## 준영속
+
+- 영속성 컨텍스트가 더는 관리하지 않는 상태는 준영속, 아래 상황에서 준영속이 된다.
+  - `em.detach(memberA)`
+  - `em.clear()`
+  - `em.close()`
+
+### em.DETACH
+
+- 특정 엔티티와 연관된 1차 캐시와 쓰기 지연 저장소의 내용이 삭제된다.
+
+  [before]
+  <img width="542" alt="image" src="https://user-images.githubusercontent.com/67682840/232946113-fda77f11-1911-4ef4-9a20-30ab3c9b48f4.png">
+
+  [after]
+  <img width="514" alt="image" src="https://user-images.githubusercontent.com/67682840/232946205-3a64eae8-34a8-4c88-bac4-d18972d9c430.png">
+
+### em.clear() & em.close()
+
+- 영속성 컨텍스트가 관리하는 모든 1차 캐시와 쓰기 지연 저장소의 내용이 삭제된다.
+
+  [after]
+  <img width="566" alt="image" src="https://user-images.githubusercontent.com/67682840/232946465-7e5e73f2-c199-496a-921b-bf50dc0d00a4.png">
+
+- 개발자가 직접 준영속으로 변경하는 경우는 드물다
+
+### 준영속 상태의 특징
+
+- 거의 비영속에 가깝다
+- PK값이 있다
+- 지연로딩을 사용할수 없다
+
+### 병합: merge()
+
+- 준영속 상태 엔티티를 영속으로 전환하기 위해서는 `merge()`를 사용하면 된다
+- 실행결과는 ***새로운*** 영속상태의 엔티티를 반환한다.
+
+  ```java
+  static EntityManagerFactory emf = Persistence.createEntityManagerFactory("jpabook");
+
+    public static void main(String[] args) {
+
+        Member member = createMember("memberA","회원1");
+        member.setUsername("회원명변경");
+        mergeMember(member);
+    }
+
+    static Member createMember(String id,String username){
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx1 = em.getTransaction();
+
+        tx1.begin();
+
+        Member member = new Member();
+        member.setId(id);
+        member.setUsername(username);
+        member.setAge(2);
+        em.persist(member);
+
+        tx1.commit();
+        em.close();
+        return member;
+    }
+
+    static void mergeMember(Member member){
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx2 = em.getTransaction();
+
+        tx2.begin();
+
+        Member mergedMember = em.merge(member);
+
+        tx2.commit();
+
+        System.out.println("준영속 " + member.getUsername());
+        System.out.println("영속 " + mergedMember.getUsername());
+
+        System.out.println(em.contains(member));
+        System.out.println(em.contains(mergedMember));
+    }
+  ```
+
+  [실행결과]
+  ```
+  준영속 회원명변경
+  영속 회원명변경
+  false
+  true
+  ```
+
+  [그림]
+  <img width="616" alt="image" src="https://user-images.githubusercontent.com/67682840/232951127-cf18cfc6-5321-4f9f-8a18-2178b84b0b96.png">
+
+  1. merge(준영속) 호출
+  2. 1차 캐시에 해당값이 있는지 조회, 없으므로 DB 조회 후 1차 캐시 + 스냅샷 저장
+  3. 1차 캐시에 있는 값을 준영속 상태의 값으로 변경
+  4. 반환
+  5. 트랜잭션 종료 시 flush가 되며 스냅샷과 1차 캐시의 내용을 비교하여 SQL을 DB에 반영
+   
+- 새로운 엔티티를 반환하므로 기존 준영속 상태의 엔티티를 사용하지 않는다. 코드를 아래와 같이 변경
+  
+  `member = em.merge(member)`
+
+#### 비영속 병합
+
+- `merge()`는 비영속 엔티티도 영속 상태로 만들 수 있다.
+- 즉, 병합은 준영속, 비영속을 신경쓰지 않는다.
+
 
