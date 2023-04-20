@@ -479,6 +479,13 @@ pulbic class JpaMain {
 
 - 준영속 상태 엔티티를 영속으로 전환하기 위해서는 `merge()`를 사용하면 된다
 - 실행결과는 ***새로운*** 영속상태의 엔티티를 반환한다.
+- 아래 링크에서 persist와 merge의 차이에 대해 다루고 있다.
+  - https://perfectacle.github.io/2021/06/13/entity-manager-persist-vs-merge/
+  - 요약
+    - JPQL 실행 시 managed entity의 연관객체에 대해 cascade가 발생한다
+    - JPQL은 쓰기 지연 저장소에 자신과 관련이 있는 SQL만 flush한다
+    - mother(영속상태)-children(비영속)인 상태에서 `motherRepository.save(mother)` 호출시 `.merge()`가 호출되고 연관객체까지 `.merge()`가 호출된다. `.merge()는 **새로운** 영속 상태 엔티티를 반환하고 컬렉션(mother.children)에 새로운 영속상태 엔티티를 대체하므로
+    - 위 블로그에서 언급한대로 child의 레퍼런스가 달라진다.
 
   ```java
   static EntityManagerFactory emf = Persistence.createEntityManagerFactory("jpabook");
@@ -551,4 +558,166 @@ pulbic class JpaMain {
 - `merge()`는 비영속 엔티티도 영속 상태로 만들 수 있다.
 - 즉, 병합은 준영속, 비영속을 신경쓰지 않는다.
 
+<br>
 
+# 4. 엔티티매핑
+
+## @Entity
+
+- 테이블과 매핑할 클래스는 @Entity 어노테이션을 필수로 붙여야 한다
+- 기본생성자를 필수로 사용한다.
+  - JPA에서는 객체를 생성할때 기본 생성자로 객체를 생성한다.
+- final, enum, interface 클래스에는 사용할 수 없다
+
+## @Table
+
+- 엔티티와 매핑할 테이블에 대한 정보를 제공하기 위해 사용한다.
+  - name: 테이블 이름을 지정한다. 생략 시 엔티티 이름을 사용한다.
+  - uniqueConstraint: DDL 생성 시 유니크 제약조건을 건다. 스키마 자동생성시에만 사용된다.
+## 다양한 매핑 사용
+
+- 요구사항이 추가되었다.
+  - 회원은 사용자와 어드민을 구분할 수 있어야 한다.
+  - 회원가입일과 수정일이 있어야 한다.
+  - 회원에 대한 설명란이 있어야 한다. 이 길이는 제한이 없다
+
+  ```java
+  @Enumerated(EnumType.STRING)
+  private RoleType roleType;
+
+  @Temporal
+  private Date CreatedDate;
+
+  @Temporal
+  private Date UpdatedDate;
+
+  @Lob
+  private String description
+  ```
+
+  - enum 타입을 사용하기 위해서는 `@Enumerated`를 사용해야한다.
+  - 날짜를 사용하기 위해서는 `@Temporal`을 사용해야한다.
+  - `@Lob`을 사용하면 CLOB, BLOB 타입을 사용할 수 있따.
+
+## 데이터베이스 스키마 자동생성
+
+- jpa는 데이터베이스 스키마 자동생성을 지원한다
+  - 매핑정보와 데이터베이스 방언을 확인하여 스키마를 생성한다.
+  - `<property name = "hibernate.hbm2ddl.auto" value="create">`
+    - 애플리케이션 실행시점에 자동으로 테이블을 생성한다.
+
+    ```sql
+    Hibernate: 
+        drop table member if exists
+    Hibernate: 
+        create table member (
+            id varchar(255) not null,
+            age integer,
+            created_date timestamp,
+            description clob,
+            last_modified_date timestamp,
+            role_type varchar(255),
+            name varchar(255),
+            primary key (id)
+        )
+    ```
+
+- `hibernate.hbm2ddl.auto`
+  - create: DROP - CREATE
+  - create-drop: DROP - CREATE - DROP
+  - update: 테이블과 엔티티의 차이점을 확인하여 다른 부분이 있다면 업데이트를 한다
+  - validate: 테이블과 엔티티의 차이점을 확인하여 다른 부분이 있다면 경고 메세지후 애플리케이션을 실행하지 않는다
+  - none: 자동 생성 기능을 사용하지 않는다. 이는 유효하지 않은 값.
+
+## 기본키 매핑
+
+- 기본키를 직접 지정해줄 수도 있지만 데이터베이스가 제공하는 전략을 사용할 수도 있다.
+  - 직접사용 : `@Id`만 사용한다
+  - 자동생성 : `@Id` + `@GeneratedValue`
+- 각 데이터베이스 벤더마다 제공하는 기본키 전략이 다르다.
+  - Oracle : 데이터베이스 시퀀스
+  - MySQL : Auto_Increment 제공
+
+### IDENTITY
+
+- 기본키 생성 전략을 데이터베이스에 위임한다.
+- IDENTITY는 데이터를 데이터베이스에 INSERT한 후 기본키 값을 조회할 수 있다.
+  - 이러한 이유로 추가적으로 데이터베이스를 조회해야한다
+  - JDBC3에서 추가된 Statement.getGeneratedKeys()를 사용하면 데이터베이스에 저장과 동시에 값을 조회할 수 있다.
+  - 하이버네이트는 위 메서드를 통해 데이터베이스에 한번만 연결한다.
+- IDENTITY 식별자 생성 전략은 엔티티를 데이터베이스에 저장해야만 식별자를 구할 수 있다.
+  - 따라서 `em.persist`호출 시 바로 INSERT 쿼리가 발생하며 쓰기 지연이 동작하지 않는다.
+  - update에 대한 쓰기 지연은 동작하는 것 같다.
+
+### SEQUENCE
+
+- 시퀀스를 통해 기본키를 할당한다
+- `em.persist()`시 데이터베이스에 시퀀스를 조회한 후 엔티티에 할당해 1차캐시에 저장한다
+- 이후에 `.flush()`를 호출하면 데이터베이스에 쿼리가 날라간다.
+
+  [실행결과]
+  ```
+  Hibernate: 
+    create sequence hibernate_sequence start with 1 increment by 1
+  //persist 전
+  Hibernate: 
+      call next value for hibernate_sequence
+  //로직 종료
+  Hibernate: 
+      /* insert jpabook.start.Board
+          */ insert 
+          into
+              board
+              (description, id) 
+          values
+              (?, ?)
+  //트랜잭션 종료
+```
+
+- 하나의 엔티티를 저장하기 위해 데이터베이스와 두번 통신해야한다
+  - 최적화를 위해 allocationSize를 사용할 수 있다.
+  - 50으로 설정해놓으면 1~50까지의 값은 메모리에서 시퀀스 값을 읽기 때문에 통신 비용이 발생하지 않는다.
+
+### AUTO
+
+- 다양한 기본키 생성 전략을 데이터베이스에 따라 자동으로 설정한다
+  - Oracle : SEQUENCE
+  - MySQL : IDENTITY
+- 전략을 확정짓지 않은 개발초기에 사용하기 좋다.
+
+### 키 선택 전략
+
+- 키는 두가지 종류가 있다
+  - 자연 키(natural key) : 비즈니스적으로 의미가 있는 키, ex) 전화번호, 주민등록번호 등
+  - 대체 키(surrogate key) : 비즈니스적으로 아무 의미가 없는 키, ex) sequence, auto_increment, sequence table
+- 자연 키를 사용하는 것 보다 대체 키 사용을 권장한다.
+
+## 필드와 컬럼 매핑: 레퍼런스
+
+### @Column
+
+- 객체 필드와 테이블의 컬럼을 매핑할 때 사용한다.
+- name : 객체 필드와 매핑할 테이블의 컬럼 이름을 지정한다.
+- insertable, updatable: 객체를 테이블에 저장할 때 해당 필드는 저장, 업데이트 하지 않도록 한다. (false시, 실수방지용)
+- table: 추후 소개
+- nullable: ddl 시 not null 옵션 추가 (false시)
+- unique: @Table의 uniqueConstraint와 동일, ddl시 alter unique ~ 추가
+- columnDefinition: 지정한 값을 토대로 ddl 생성, ex) @Column(columnDefinition = "varchar(100) default 'EMPTY'")
+- length
+- precision, scale
+
+### @Enumerated
+
+- Enum 타입을 컬럼으로 사용하기 위해 사용한다.
+ - EnumType.ORDINAL
+  - 순서에 따라 숫자를 컬럼에 저장한다.
+  - 저장되는 크기가 작다는 장점이 있지만 Enum 클래스 중간에 다른 값이 추가되면 문제가 발생한다.
+ - EnumType.STRING
+  - 이름을 기준으로 컬럼에 저장한다.
+  - 저장되는 크기가 ORDINAL보다 크지만 Enum 클래스 중간에 다른 값이 추가되어도 문제가 발생하지 않는다
+  - STRING 사용을 권장한다.
+
+### @Transient
+
+- 일시적인이라는 뜻
+- 이 필드는 매핑하지 않는다, 객체에 일시적으로 값을 저장하고 데이터베이스에는 저장하지 않을 때 사용
