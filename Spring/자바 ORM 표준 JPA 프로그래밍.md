@@ -672,7 +672,7 @@ pulbic class JpaMain {
           values
               (?, ?)
   //트랜잭션 종료
-```
+  ```
 
 - 하나의 엔티티를 저장하기 위해 데이터베이스와 두번 통신해야한다
   - 최적화를 위해 allocationSize를 사용할 수 있다.
@@ -721,3 +721,224 @@ pulbic class JpaMain {
 
 - 일시적인이라는 뜻
 - 이 필드는 매핑하지 않는다, 객체에 일시적으로 값을 저장하고 데이터베이스에는 저장하지 않을 때 사용
+
+<br> 
+
+# 5장, 연관관계 기초 매핑
+
+- ORM은 객체의 참조와 데이터베이스의 외래키의 매핑을 지원하는 것이 핵심 목적이다
+
+### 객체 관계 매핑
+
+- 회원과 팀이 다대일 관계로 맺어진다고 가정하자
+
+  ```java
+  public class Member{
+    @Id @Column(name = "MEMBER_ID")
+    private Long id;
+
+    private String username;
+
+    @ManyToOne
+    @JoinColumn(name = "TEAM_ID")
+    private Team team;
+
+    ...
+  }
+  ```
+
+  ```java
+  public class Team{
+    @Id
+    @Column(name = "TEAM_ID")
+    private String id;
+
+    private String name;
+  }
+  ```
+
+### @JoinColumn
+
+- 외래키와 매핑하기 위해 사용한다. 사용할 수 있는 속성은 다음과 같다.
+  - name : 매핑할 외래키의 이름
+  - referencedColumName: 외래키가 참조하는 대상 테이블의 컬럼명
+    - `@JoinColumn(name = "TEAM_ID", referencedColumnName = "id")` 지정 시 id는 Team의 id를 가리킨다.
+
+### @ManyToOne
+
+- 다대일 관계를 나타낸다. 사용할 수 있는 속성은 다음과 같다.
+  - optional: false로 설정하면 연관 엔티티가 항상 있어야 한다.
+  - fetch: 글로벌 페치 전략을 설정한다.
+  - cascade: 영속성 전이 기능을 사용한다.
+  - targetEntity: 연관 엔티티의 타입정보를 설정한다. 제네릭의 타입추론으로 거의 사용하지 않는다.
+    ```java
+    @OneToMany
+    private List<Member> members;
+
+    @OneToMany(targetEntity = Member.class)
+    private List members;
+    ```
+
+> @JoinColumn nullable vs @ManyToOne optional
+>
+> JoinColum이 nullable true이고 ManyToOne의 optional이 false라면 논리적으로 맞지 않아 왜 두가지 옵션이 존재하는지 잘 이해가 되지 않았다. 이를 이해하려면 JPA가 존재하는 이유에 대해서 다시 생각해보면 된다. JPA는 데이터베이스와 객체지향 사이의 차이를 매핑하기 위해 존재하는 기술이다. JoinColumn 의 nullable은 실제 데이터베이스의 컬럼에 null 값을 허용하는지 여부를 판단하는 물리적인 개념이라면 ManyToOne의 optional은 객체지향의 관점에서 연관 엔티티가 존재해야하는지를 가리킨다. 이는 논리적인 개념이다.
+
+## 연관관계 사용
+
+### 저장
+
+```java
+Team team = new Team("team1","팀1");
+em.persist(team);
+
+Member member1 = new Member("member1","회원1");
+member1.setTeam(team);
+em.persist(member1);
+```
+
+- 엔티티를 저장할때 연관된 모든 엔티티는 영속 상태여야한다.
+- 코드에서 중요한 부분은 `member1.setTeam(team)`이다. 이 코드 덕분에 직접 team_id를 조회해서 저장하지 않아도 된다.
+
+[실행된 쿼리]
+```
+insert 
+        into
+            member
+            (team_id, username, member_id) 
+        values
+            ("team1", "회원1", "member1")
+```
+
+- 이를 통해 외래키를 가지고 있는 엔티티(여기서는 Member)는 연관관계 설정을 꼭 해야하는 것을 알 수 있다.
+
+> 양방향 연관관계
+>
+> 외래키를 가지고 있는 엔티티는 연관관계 설정을 하면 데이터베이스에 자동으로 참조하는 엔티티의 id값을 확인하여 SQL을 생성해주는 것을 확인했다. 위 예제에서 Team 또한 @OneToMany로 양방향 관계를 상황이라면 연관관계를 설정해야할까? 이에 대한 대답은 JoinColumn의 nullable, ManyToOne의 optional과 비슷하다. 데이터베이스에 not null 제약조건을 위해 nullable을 설정하고 논리적인 관계를 위해 optional을 설정한 것처럼 물리적으로 FK를 관리하는 엔티티인 member에 `setTeam()` 메서드를 사용했다면 논리적인 관점, 즉 객체지향적인 관점을 위해서 @OneToMany에 `.addMember()` 메서드를 사용해 연관관계를 설정해주는 것이 옳다.
+
+### 조회
+
+- 객체를 통해 연관 엔티티를 조회, 객체 그래프 탐색
+- JPQL 사용
+
+### 수정
+
+- 영속성 상태인 엔티티에 대해 값을 수정하면 트랜잭션 종료시 자동으로 update가 실행된다
+
+### 삭제
+
+- 연관된 엔티티를 삭제하기 위해서는 연관관계부터 제거해야한다. 만약 제거하지 않는다면 외래키 제약조건에 의해 오류가 발생한다. 
+
+```java
+public static void logic(EntityManager em) {
+    Team team = new Team("team1","팀1");
+    em.persist(team);
+
+    Member member1 = new Member("member1","회원1");
+    member1.setTeam(team);
+    em.persist(member1);
+
+    em.flush();
+
+    em.remove(team);
+}
+```
+
+[실행결과]
+
+![image](https://user-images.githubusercontent.com/67682840/233524109-1f4d6dac-2e8c-4726-b568-65a03186d8c0.png)
+
+올바른 결과를 위해선 `emflush()`와 `em.remove(team)` 사이에 `member1.setTeam(null)`을 추가하면 된다.
+
+```java
+public static void logic(EntityManager em) {
+    Team team = new Team("team1","팀1");
+    em.persist(team);
+
+    Member member1 = new Member("member1","회원1");
+    member1.setTeam(team);
+    em.persist(member1);
+
+    em.flush();
+    member1.setTeam(null);
+    em.remove(team);
+}
+```
+
+[실행결과]
+
+<img width="433" alt="image" src="https://user-images.githubusercontent.com/67682840/233524392-ceaf0bdb-88db-41ee-887d-0f40ed11ed39.png">
+
+<br>
+
+> 연관관계를 맺고 있는 두 엔티티가 있을 때, @JoinColumn의 nullable이 false인 경우는 없는걸까?
+>
+> 연관 엔티티를 삭제하기 위해서는 `setTeam(null)`와 같이 연관관계를 우선 끊어내야한다. team을 null로 설정하기 위해서는 FK가 nullable 해야한다. 그렇다면 연관 엔티티를 삭제하는 경우가 있다면 무조건 FK는 nullable해야하는걸까? <br>
+> chatGPT에게 아래와 같은 답변을 받았다. 요약하자면 부모 엔티티가 삭제될 때 자식 엔티티를 모두 삭제하고 싶은 경우에 사용한다고 한다.
+
+<img width="742" alt="image" src="https://user-images.githubusercontent.com/67682840/233526222-a12dc553-a5b0-4db1-9f71-0441e6fc7e76.png">
+
+## 양방향 연관관계
+
+- Team과 Member 엔티티를 양방향 연관관계로 맺기 위해 Team에 `@OneToMany`를 추가해보자.
+- JPA는 List, Map, Set과 같은 여러 컬렉션을 지원한다.
+- 데이터베이스는 외래키 하나로 양방향 연관관계가 성립하므로 `@OneToMany`를 추가했다고 해서 데이터베이스에 변화가 일어나지 않는다.
+
+  ```java
+  @OneToMany(mappedBy = "team")
+  private List<Member> members = new ArrayList<>();
+  ```
+
+## 연관관계의 주인
+
+- 단방향, ManyToOne만 사용했을때는 객체의 연관관계와 데이터베이스의 연관관계가 하나씩 있으므로 차이가 없었다.
+- 양방향 연관관계, 정확히는 두 개의 단방향 연관관계를 사용한다면 객체의 참조는 두 곳(Team.members, Member.team)이지만 데이터베이스 연관관계는 하나이므로 차이가 발생한다.
+- mappedBy로 이러한 차이를 해결하지 않으면 아래 사진처럼 FK 관리를 위해 테이블이 하나 더 생성된다.
+  
+  [mappedBy 미사용]
+
+  <img width="201" alt="image" src="https://user-images.githubusercontent.com/67682840/233541226-1ad6b24d-f752-45fa-94fc-e626f4cc7af6.png">
+
+  [mappedBy 사용]
+
+  <img width="199" alt="image" src="https://user-images.githubusercontent.com/67682840/233541750-ff4489d3-4f6d-42fb-a162-2779e931cea7.png">
+
+- 연관관계의 주인은 FK를 가지고 있는 엔티티
+- 주인이 아닌쪽은 `mappedBy`를 통해 자신의 연관관계가 다른 연관관계에 의해 매핑되고 있음을 알려준다.
+- 요약하자면 FK를 가지고 있는 객체의 연관관계만 데이터베이스 연관관계와 매핑될 수 있다!
+
+## 양방향 연관관계 저장
+
+- 양방향 연관관계 저장의 코드는 아래와 같다. 이는 단방향 연관관계 저장 코드와 완벽하게 일치한다.
+
+  ```java
+  Team team1 = new Team("team1","팀1");
+  em.persist(team1);
+
+  Member member1 = new Member("member1","회원1");
+  member1.setTeam(team1);
+  Member member2 = new Member("member2","회원2");
+  member2.setTeam(team1);
+
+  em.persist(member1);
+  em.persist(member2);
+  ```
+
+- `team1.getMembers().add(member1)`와 같은 코드가 필요할 것 같지만 연관관계의 주인이 아니므로 JPA는 이를 무시한다.
+
+## 양방향 연관관계의 주의점
+
+- 위에서도 언급했지만 연관관계의 주인이 아닌곳에는 값을 매핑하고 연관관계의 주인인 곳에는 값을 매핑하지 않는 오류를 조심해야한다.
+- 이에 대한 문제는 https://www.youtube.com/watch?v=brE0tYOV9jQ 에서도 다루니 궁금하면 살펴보자
+
+### 순수한 객체까지 고려한 양방향 연관관계
+
+- JPA는 ORM, 객체와 데이터베이스를 매핑해주기 위한 기술이다.
+- 앞서 살펴봤듯이, `setTeam()`을 통해 연관관계를 설정하면 데이터베이스에는 문제가 없다
+- 하지만 JPA는 데이터베이스 뿐만 아니라 객체지향도 고려하므로 `Team.getMembers().add(member1)`와 같은 코드를 추가해주는 것이 좋다.
+
+## 정리
+
+- 단방향 연관관계만으로 객체와 데이터베이스의 연관관계 매핑은 완료되었다.
+- 양방향 연관관계 설정 시, 반대방향에서 객체 그래프 탐색 기능이 추가된것이다.
+- 양뱡향 연관관계는 객체에서 양쪽 방향을 모두 관리해야한다
+- 양방향 연관관계는 까다롭다. 단방향으로 설계하고 필요하면 양방향을 추가하도록 하자.
