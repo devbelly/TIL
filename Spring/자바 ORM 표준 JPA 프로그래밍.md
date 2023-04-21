@@ -942,3 +942,87 @@ public static void logic(EntityManager em) {
 - 양방향 연관관계 설정 시, 반대방향에서 객체 그래프 탐색 기능이 추가된것이다.
 - 양뱡향 연관관계는 객체에서 양쪽 방향을 모두 관리해야한다
 - 양방향 연관관계는 까다롭다. 단방향으로 설계하고 필요하면 양방향을 추가하도록 하자.
+
+<br> 
+
+# 6장, 다양한 연관관계 매핑
+
+- 다중성에 대해 언급할 때 왼쪽에 있는 것이 연관관계의 주인이라고 가정하겠다.
+
+## 다대일
+
+### 다대일 단방향 관계
+
+## 일대다
+
+- 하나의 팀은 여러 회원을 참조하지만 회원은 팀을 참조를 하지 않는다.
+- 그림은 아래와 같다.
+
+  <img width="479" alt="image" src="https://user-images.githubusercontent.com/67682840/233627975-fe8e0f39-b50b-4ee6-97da-75b53e659045.png">
+
+  - 일반적으로 자신과 매핑하는 테이블의 외래키를 관리하지만 일대다에서는 반대 테이블의 외래키를 관리하는 모습을 보인다
+  - 이러한 이유는 데이터베이스는 일대다 관계에서 "다"쪽에 항상 외래키를 저장하기 때문이다
+  - 하지만 "다"쪽 엔티티에 해당하는 멤버에 외래키와 매핑할 수 있는 참조필드가 없다.
+  - "일"쪽에 members가 존재하므로 Team 엔티티에서 반대편 테이블의 외래키를 관리하는 형태이다
+
+  ```java
+  @Entity
+  public class Team {
+      @Id @GeneratedValue
+      @Column(name="TEAM_ID")
+      private Long id;
+
+      private String name;
+
+      @OneToMany
+      @JoinColumn(name = "TEAM_ID")
+      private List<Member> members = new ArrayList<>();
+
+      public Team(){}
+      public Team(String name){
+          this.name = name;
+      }
+
+      public List<Member> getMembers(){
+          return members;
+      }
+  }
+  ```
+
+### 일대다 단방향 매핑의 단점
+
+- 매핑한 객체가 관리하는 외래키가 다른 테이블에 있다는 문제
+- 매핑한 객체가 관리하는 외래키가 같은 테이블에 있다면 엔티티의 저장과 연관관계 관리를 insert 한번에 가능
+- 다른 테이블에 있으므로 추가적인 update 쿼리가 발생한다.
+
+  ```java
+  public static void logic(EntityManager em) {
+    Member member1 = new Member("member1");
+    Member member2 = new Member("member2");
+
+    Team teamA = new Team("team1");
+    teamA.getMembers().add(member1);
+    teamA.getMembers().add(member2);
+
+    em.persist(member1);
+    em.persist(member2);
+    em.persist(teamA);
+  }
+  ```
+
+  - member를 persist할 때 Team의 존재를 몰라 insert만 발생하지만
+  - team을 persist할때 비로소 연관관계의 존재를 알게 되므로 추가적으로 update 쿼리가 발생하게 되는 것!
+
+### 일대다 양방향
+
+- 다대일 양방향 관계를 적극 사용하자...
+
+## 일대일
+
+- 일대일에서는 주 테이블에서 외래키를 관리할 수도 있고 참조 테이블에서 관리할 수도 있다.
+### 주 테이블에 외래키
+
+- 주 객체가 대상 객체를 참조하는 것처럼 주 테이블에 외래키를 두고 대상 테이블을 참조한다.
+- 객체지향 개발자들이 선호한다.
+- JPA도 주 테이블에 외래키를 두면 좀더 편리하게 매핑할 수 있다.
+
