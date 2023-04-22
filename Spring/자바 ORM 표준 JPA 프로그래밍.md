@@ -1020,9 +1020,191 @@ public static void logic(EntityManager em) {
 ## 일대일
 
 - 일대일에서는 주 테이블에서 외래키를 관리할 수도 있고 참조 테이블에서 관리할 수도 있다.
+  
 ### 주 테이블에 외래키
 
 - 주 객체가 대상 객체를 참조하는 것처럼 주 테이블에 외래키를 두고 대상 테이블을 참조한다.
 - 객체지향 개발자들이 선호한다.
 - JPA도 주 테이블에 외래키를 두면 좀더 편리하게 매핑할 수 있다.
+
+### 대상 테이블에 외래키
+
+- 데이터베이스 개발자들이 선호하는 방식이다
+- JPA는 일대일 단방향 관계에서 대상 테이블에 외래키를 두는 것을 허용하지 않는다.
+  
+## 다대다
+
+- 데이터베이스는 다대다 관계를 중간에 관계테이블을 둬서 일대다, 다대일 관계로 풀어간다
+  
+  <img width="494" alt="image" src="https://user-images.githubusercontent.com/67682840/233756465-e70f3c96-4059-4e2b-8903-9cc9da363aee.png">
+
+- 반면에 객체는 다대다 관계를 별도의 중간 객체 없이 바로 풀어나갈 수 있다. 양쪽 다 컬렉션을 사용하면 되기 때문이다
+
+### 다대다 단방향
+
+- 예시
+  
+  ```java
+  @Entity
+  public class Member {
+
+      @Id
+      @GeneratedValue
+      @Column(name = "MEMBER_ID")
+      private Long id;
+
+      private String username;
+
+      @ManyToMany
+      @JoinTable(
+              name = "MEMBER_PRODUCT",
+              joinColumns = @JoinColumn(name = "MEMBER_ID"),
+              inverseJoinColumns = @JoinColumn(name = "PRODUCT_ID")
+      )
+      private List<Product> products = new ArrayList<Product>();
+
+      ...
+  }
+  ```
+
+  ```java
+  @Entity
+  public class Product {
+      @Id @GeneratedValue
+      @Column(name = "PRODUCT_ID")
+      private Long id;
+
+      private String name;
+  }
+  ```
+
+- `@JoinTable`
+  - name : 관계 테이블의 이름을 지정한다.
+  - joinColumns : 현재 방향인 멤버와 매핑할 조인 컬럼 정보를 지정한다.
+  - inverseJoinColumns : 반대 방향인 상품과 매핑할 조인 컬럼 정보를 지정한다.
+
+- 중간 엔티티를 직접 작성하지 않아도 자동으로 생성됨을 알 수 있다.
+
+  <img width="197" alt="image" src="https://user-images.githubusercontent.com/67682840/233757212-d9ef994d-b7c2-4f49-8621-c84e4fbb155e.png">
+
+- 저장하는 코드는 다음과 같다.
+
+  ```java
+  public static void logic(EntityManager em) {
+        Product product = new Product();
+        em.persist(product);
+
+        Member member1 = new Member("user1");
+        member1.getProducts().add(product); // 연관관계 설정
+        em.persist(member1);
+    }
+  ```
+
+  - Product, Member, Member_Product 테이블에 INSERT 쿼리가 한번씩 발생함을 알 수 있다.
+
+### 다대다: 매핑의 한계와 극복, 연결 엔티티 사용
+
+- `@JoinTable`은 간결하지만 추가적인 필드를 사용하지 못하는 단점이 있다.
+- 예를 들어 회원이 주문을 하면 추가적으로 주문한 날짜와 주문 수량에 대해서도 파악해야한다.
+  - `JoinTable`을 사용하면 위 정보를 회원과 상품 엔티티에 매핑할 수 없다
+- 이러한 이유로 다대다 관계를 표현할 수 있는 객체라 할지라도 일대다, 다대일 관계로 풀어야하고 이를 위해 연결 엔티티를 사용해야한다.
+- 연관 엔티티는 다음과 같다
+  
+  ```java
+  @Entity
+  @IdClass(MemberProductId.class)
+  public class MemberProduct{
+    @Id
+    @JoinColumn(name = "MEMBER_ID")
+    @ManyToOne
+    private Member member;
+
+    @Id
+    @JoinColumn(name = "PRODUCT_ID")
+    @ManyToOne
+    private Product product;
+
+    private int amount;
+    ...
+  }
+  ```
+
+  - `@Id`와 `@JoinColumn`을 통해 부모 테이블의 기본키를 외래키로 사용하면서 자신의 기본키로 사용하고 있다.
+  - 기본키로 MEMBER_ID와 PRODUCT_ID를 사용하고 있다. 이를 복합 기본키라고 부른다.
+  - 복합 기본키를 사용하기 위해서는 식별자 클래스(MemberProductId.class)를 사용해야한다.
+
+  ```java
+  public class MemberProductId implements Serializable{
+    ...
+  }
+  ```
+  
+> 식별관계
+>
+> 부모 테이블의 기본키를 통해 자신의 기본키와 외래키로 사용하는 모습을 보았다. 데이터베이스에서는 이를 식별관계라고 한다.
+
+### 다대다: 새로운 기본 키 사용
+
+- 복합키를 사용하는 대신 데이터베이스에서 제공하는 기본키를 사용하자.
+- 비즈니스에 의존적이지도 않으며 복잡하게 복합키를 위한 테이블을 사용할 필요도 없다.
+- MEMBER_PRODUCT 라는 이름보다는 ORDER 이라는 테이블 명이 더 어울린다
+  - ORDER은 일부 데이터베이스의 예약어로 잡혀있으므로 ORDERS를 사용하기도 한다.
+
+<br>
+
+# 7장, 고급매핑
+
+## 상속 관계 매핑
+
+- 관계형 데이터베이스에는 객체에서 말하는 상속이라는 개념이 없지만 슈퍼타입, 서브타입이라는 모델링 기법이 존재
+- ORM에서 말하는 상속 관계 객체의 상속과 데이터베이스의 슈퍼타입, 서브타입 관계를 매핑하는 것
+- 슈퍼타입, 서브타입의 논리 관계를 실제 테이블로 풀어나갈 때는 세가지 전략이 존재한다.
+
+### 조인전략
+
+- 부모와 자식 클래스를 모두 테이블로 만든다
+  
+  <img width="401" alt="image" src="https://user-images.githubusercontent.com/67682840/233769759-d2333f92-29e0-4050-b097-57643e4d329d.png">
+
+- 객체는 타입으로 구분할 수 있지만 데이터베이스는 타입이라는 개념이 없다. 구분을 위해 부모 테이블에 `DTYPE` 컬럼이 추가됨을 알 수 있다.
+- 자식 테이블은 부모의 기본키를 외래키 + 기본키로 사용한다. 그림에서 ITEM_ID를 사용하는 모습을 볼 수 있다.
+- 테이블을 여러개 만드므로 조회시 조인을 많이 사용한다. 이 때문에 조인전략이라고 부른다.
+- 코드
+
+  ```java
+  @Entity
+  @Inheritance(strategy = InheritanceType.JOINED)
+  @DiscriminatorColumn(name = "DTYPE")
+  public abstract class Item {
+      @Id @GeneratedValue
+      @Column(name = "ITEM_ID")
+      private Long id;
+
+      private String name;
+      private int price;
+  }
+
+  @Entity
+  @DiscriminatorValue("M")
+  public class Movie extends Item{
+      private String director;
+      private String actor;
+  }
+  ```
+
+  - `@Inheritance` : 상속 매핑시 부모 테이블에 `@Inheritance` 어노테이션을 사용해야한다.
+  - `@DiscriminatorColumn` : 부모테이블에서 자식 테이블을 구분하기 위해 사용
+  - `@DiscriminatorValue` : 위 컬럼에 들어갈 값을 지정
+
+- 장점
+  - 테이블이 정규화된다.
+
+    정규화는 중복된 데이터를 제거하고 일관성과 무결성을 확보하는 것이다. 상속구조를 통해 효율적으로 저장하였으므로 정규화를 이뤘다고 볼 수 있다.
+  
+  - 저장공간의 효율
+
+- 단점
+  - 조회시 조인이 많이 사용되므로 성능저하문제가 발생할 수 있다.
+  - 쿼리가 복잡하다
+  - 데이터 저장 시 INSERT가 두 번 실행된다.
 
