@@ -1204,7 +1204,82 @@ public static void logic(EntityManager em) {
   - 저장공간의 효율
 
 - 단점
+  
   - 조회시 조인이 많이 사용되므로 성능저하문제가 발생할 수 있다.
   - 쿼리가 복잡하다
   - 데이터 저장 시 INSERT가 두 번 실행된다.
 
+### 단일 테이블 전략
+
+<img width="153" alt="image" src="https://user-images.githubusercontent.com/67682840/233818708-45a5138a-4bb0-49ec-b950-58c0621abaa4.png">
+
+- 각 자식 엔티티 마다 클래스를 만드는 것이 아니라 하나의 거대한 테이블을 생성한다.
+- 장점
+  - JOIN을 사용하지 않아 성능이 뛰어나다
+  - 쿼리가 단순하다
+- 단점
+  - 자식 엔티티가 사용하용하는 필드는 nullable 해야한다.
+  - 단일 테이블에 모두 저장하므로 테이블이 커질 수 있다. 조회 성능이 오히려 느려질 수 있다.
+
+    <img width="626" alt="image" src="https://user-images.githubusercontent.com/67682840/233818829-c3f7df77-664b-434e-8782-824c251e6d8b.png">
+
+### 구현 클래스마다 테이블 전략
+
+<img width="406" alt="image" src="https://user-images.githubusercontent.com/67682840/233818930-4ca6864a-c977-44fb-88cd-efcdd592e7e5.png">
+
+- 장점
+  - not null 제약조건을 사용할 수 있다.
+  - 서브 타입을 구분해서 처리할 때 효과적이다.
+- 단점
+  - 여러 자식 테이블을 함께 조회할 때 성능이 느리다.
+  - 자식 테이블을 통합적으로 쿼리를 날리기 어렵다.
+
+- 데이터베이스 설계자와 ORM 전문가 둘다 추천하지 않는 전략이다.
+
+> @MappedSuperclass vs @Inheritance
+
+- MappedSuperclass는 base class에 선언된 속성이 마치 자식 클래스에 구현된 것처럼 하게 해주는 어노테이션이다.
+- 이는 실제 데이터베이스에는 나타나지 않는, 객체에만 보이는 상속이 된다.
+- @Inheritance는 OOP 세계에 존재하는 상속을 데이터베이스 테이블 구조로 실체화해준다.
+  - 이를 통해 Strategy Pattern을 구현할 수 있다.
+- @MappedSuperClass는 그마저도 @Embeddable로 대체할 수 있으며 차이점은 @Embeddable은 @Id를 포함할 수 없다는 것이다.
+- https://stackoverflow.com/questions/9667703/jpa-implementing-model-hierarchy-mappedsuperclass-vs-inheritance
+
+## @MappedSuperclass
+
+- 위에서 살펴본 Inheritance는 실제 테이블과 매핑되지만(모두는 아님) MappedSuperClass는 매핑 정보를 상속하기 위해 사용한다
+  
+  <img width="526" alt="image" src="https://user-images.githubusercontent.com/67682840/233820964-d7fa0822-ad9d-4b22-8588-92bcaad058f2.png">
+
+  ```java
+  @MappedSuperclass
+  public class BaseEntity {
+      @Id @GeneratedValue
+      private Long id;
+      private String name;
+  }
+  @Entity
+  public class Member extends BaseEntity{
+      private String email;
+  }
+  ```
+
+- 부모로부터 물려받은 매핑정보를 재정의 하기 위해선 `@AttritubeOveride`를 사용하면 된다.
+
+  ```java
+  @Entity
+  @AttributeOverride(name = "id",column = @Column(name = "MEMBER_ID"))
+  public class Member extends BaseEntity{
+    private String email;
+  }
+  ```
+
+- 둘 이상을 재정의 하려면 `@AttributeOverrides`를 사용하면 된다
+
+## 복합키와 식별관계 매핑
+
+- 데이터베이스 테이블의 관계는 외래키가 기본키에 포함되는지 여부에 따라 식별관계, 비식별관계로 나눌 수 있다.
+  - 식별관계 : 부모테이블의 기본키를 자식 테이블의 기본키, 외래키로 사용
+  - 비식별관계 : 부모테이블의 기본키를 자식 테이블의 외래키로만 사용
+    - 필수적 비식별 관계 : 외래키에 null을 허용하지 않는다
+    - 선택적 비식별 관계 : 외래키에 null을 허용한다.
