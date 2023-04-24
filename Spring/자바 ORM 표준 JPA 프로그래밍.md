@@ -1283,3 +1283,221 @@ public static void logic(EntityManager em) {
   - 비식별관계 : 부모테이블의 기본키를 자식 테이블의 외래키로만 사용
     - 필수적 비식별 관계 : 외래키에 null을 허용하지 않는다
     - 선택적 비식별 관계 : 외래키에 null을 허용한다.
+
+### 복합키 : 비식별 관계 매핑
+
+- 아래처럼 작성하면 오류가 발생한다.
+
+  ```java
+  @Entity
+  public class Hello{
+    @Id
+    private String id1;
+    @Id
+    private String id2;
+  }
+  ```
+
+- 영속성 컨텍스트에 엔티티를 저장할 때 엔티티의 식별자를 사용
+- 식별자들을 구분할때는 equals와 hashcode를 사용한다.
+- 복합키를 사용할때는 복합키를 위한 클래스를 사용하므로 해당 클래스에 equals와 hashcode를 사용해야한다.
+- 복합키를 지원하는 방법은 아래 두가지가 있다.
+  - `@Idclass`
+  - `@EmbeddedId`
+
+#### IdClass
+
+- 코드
+  
+  ```java
+  @Entity
+  @IdClass(ParentId.class)
+  public class Parent {
+      @Id
+      @Column(name = "PARENT_ID1")
+      private String id1;
+      @Id
+      @Column(name = "PARENT_ID2")
+      private String id2;
+
+      @Column
+      private String name;
+  }
+  ```
+
+- 복합키 클래스 코드
+
+  ```java
+  public class ParentId implements Serializable {
+    private String id1;
+    private String id2;
+
+    public ParentId(){}
+
+    public ParentId(String id1, String id2){
+        this.id1 = id1;
+        this.id2 = id2;
+    }
+  }
+  ```
+
+- 복합키 클래스는 다음을 만족해야한다
+  - Serializable을 구현
+  - equals & override 메서드 오버라이드
+  - 기본 생성자
+  - 복합키 클래스의 속성의 이름과 클래스의 속성의 이름이 같아야 한다.(id1,id2가 동일함을 알 수 있다)
+  - 클래스 식별자는 public 이여야 한다
+
+- 이를 참조하는 자식 클래스
+
+  ```java
+  @Entity
+  public class Child{
+    @Id
+    private String id;
+
+    @ManyToOne
+    @JoinColumns({
+      @JoinColumn(name = "PARENT_ID1",referencedColumnName = "PARENT_ID1"),
+      @JoinColumn(name = "PARENT_ID2",referencedColumnName = "PARENT_ID2")
+    })
+    private Parent parent;
+  }
+  ```
+
+- 데이터 저장 시
+
+  ```java
+  public static void logic(EntityManager em) {
+      Parent parent = new Parent();
+      parent.setId1("myId1");
+      parent.setId2("myId2");
+      parent.setName("parent");
+      em.persist(parent);
+  }
+  ```
+
+  -  직접 ParentId.class를 생성하지 않아도 영속성 컨텍스트에 엔티티를 저장하는 시점에 ParentId 객체를 생성을 한다.
+  
+- 데이터베이스와 관련이 있는 접근이다.
+
+#### @EmbeddedId
+
+- @Idclass보다 객체지향적인 접근이다.
+- 클래스 내에 바로 ParentId를 사용할 수 있다.
+
+  ```java
+  @Entity
+  public class Parent{
+    @EmbeddedId
+    private ParentId parentId;
+
+    ...
+  }
+
+  @Embeddable
+  public class ParentId implements Serializable {
+    @Column(name = "PARENT_ID1")
+    private String id1;
+    @Column(name = "PARENT_ID2")
+    private String id2;
+  }
+  ```
+
+#### 복합키와 equals(), hashCode()
+
+- 영속성 컨텍스트는 식별자를 키로 저장하여 엔티티를 관리한다
+- 기본적으로 사용하는 equals는 Object 클래스에 구현되어 있고 이는 참조값을 비교(동일성 비교)한다
+- 식별자가 같다면 같은 엔티티로 구분(동일성 비교)해야하므로 equals와 hashCode를 필수적으로 구현하자.
+
+### 식별, 비식별 관계의 장단점
+
+- 식별관계보다는 비식별 관계가 갖는 이점이 많다.
+- 식별관계는 부모의 기본키가 자식 테이블에 전파되는 단점이 있다.
+- 식별관계는 기본키로 비즈니스적으로 의미가 있는 자연키 컬럼 조합을 조합하는 경우가 많다.
+  - 비식별관계는 비즈니스와 전혀 관련 없는 대리키를 사용한다.
+  - 하지만 비즈니스 요구사항은 언제든 변할 수 있으므로 대리키를 사용하는 것이 더 좋다.
+
+- 정리
+  - 새로운 프로젝트를 할 계획이 있다면 Long 타입의 대리키를 사용하는 것이 좋다.
+  - Long은 920경 정도이므로 안전하다.
+  - 선택적 비식별 관계보다 필수적 비식별 관계를 사용하는 것이 더 좋다.
+    - NOT NULL을 사용해서 INNER JOIN을 사용하기 때문이다.
+
+## 조인 테이블
+
+- 테이블끼리 연관관계를 맺는 방법은 다음 두가지이다
+  - 외래키
+  - 조인 테이블 사용
+
+- 상황(외래키)
+
+  ![image](https://user-images.githubusercontent.com/67682840/233905122-27d85414-b589-411c-9bde-80e2f4f2c602.png)
+
+  - 회원은 사물함 하나를 사용할 수 있다.
+  - 회원이 사물함을 사용하기 전까지 두 테이블은 관련이 없다.
+  - 선택적 비식별 관계이므로 두 테이블 JOIN 시 OUTER 연산을 사용한다.
+  - 회원과 사물함이 가끔 관계를 맺는다면 많은 외래키가 NULL로 저장되는 단점이 있다.
+
+- 상황(조인 테이블)
+
+  <img width="514" alt="image" src="https://user-images.githubusercontent.com/67682840/233905613-93cedc01-96a9-4c98-8909-484eaa825b24.png">
+
+  - 두 엔티티에 외래키를 위한 속성이 없다.
+  - 단점은 테이블을 새로이 만들어야 하는 점이다.
+  - MEMBER와 LOCKER를 조인하려면 추가적으로 MEMBER_LOCKER까지 조인해야한다.
+
+<br>
+
+# 8장, 프록시와 연관관계 관리
+
+## 프록시
+
+- 연관관계를 맺는다고 해서 항상 엔티티를 사용하는 것은 아니다.
+- 사용하지도 않은 연관관계를 데이터베이스에서 가져오는 것은 비효율적
+- JPA에서는 이러한 문제를 해결하기 위해 사용하는 시점에 쿼리를 날리는 지연로딩 기능을 지원한다.
+- 데이터베이스에서 조회를 지연하기 위해서는 가짜 객체를 사용해야하는데 이를 프록시라고 한다.
+
+> 참고
+>
+> JPA 표준 명세는 지연 로딩의 구현방법을 구현체에 위힘했다. 하이버네이트는 프록시와 바이트코드를 수정하는 방법을 제공한다.
+
+### 프록시 기초
+
+- `Member member = em.find(Member.class,"member1")` 을 사용하면 객체를 실제로 사용하는 것과는 상관없이 영속성 컨텍스트를 확인한 후 해당 객체가 없으면 데이터베이스에 쿼리를 날리게 된다.
+- 실제 객체를 사용하는 시점까지 미루고 싶다면 `em.find()` 대신 `em.getReference()`를 사용하면 된다.
+
+- 특징
+
+  <img width="361" alt="image" src="https://user-images.githubusercontent.com/67682840/233927327-2c0016fb-41aa-4ea1-a147-ef79c3516559.png">
+
+  - 프록시는 원본 클래스를 기반으로 구현하므로 사용하는 입장에서는 프록시인지 구분하기 어렵다
+  - 프록시는 실제 객체에 대한 참조를 가지고 있어 메서드 호출시 실제 객체의 메서드를 호출한다.
+
+- 프록시 예상 코드
+
+  ```java
+  class MemberProxy extends Member{
+    Member target = null;
+
+    public String getName(){
+      if(target == null){
+
+        // 2. 초기화 요청
+        // 3. DB 조회
+        // 4. 실제 엔티티 생성
+      }
+    }
+    ...
+  }
+  ```
+
+- 실행단계
+
+  <img width="617" alt="image" src="https://user-images.githubusercontent.com/67682840/233928855-e178cda7-4824-48f7-b777-8e4a2bfaef0b.png">
+
+  - proxy.getName() 호출
+  - target이 null이므로 영속성 컨텍스트를 통해 엔티티 생성 요청
+  - 데이터베이스를 조회해서 실제 객체 생성
+  - target.getName() 호출
+
