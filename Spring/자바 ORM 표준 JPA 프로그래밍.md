@@ -1501,3 +1501,211 @@ public static void logic(EntityManager em) {
   - 데이터베이스를 조회해서 실제 객체 생성
   - target.getName() 호출
 
+- 특징
+  - 영속성 컨텍스트에 실제 객체가 존재한다면 `getReference()`를 호출해도 실제 객체가 리턴된다.
+  - 프록시는 원본 객체를 상속했으므로 타입 체크시 주의해야한다
+  - 프록시는 단 한번 초기화 되는데 이는 영속성 컨텍스트의 도움을 받는다. 만일 "준영속" 상태에서 영속성 컨텍스트의 도움을 받을 수 없다면 LazyInitializeException 예외가 발생한다.
+
+### 프록시와 식별자
+
+- 영속성 컨텍스트에 초기화를 요청하기 위해서는 식별자를 알아야한다
+- 위 이유로 프록시 객체는 id 값을 가지고 있어 `Proxy.getId()`를 호출하더라도 초기화 되지 않는다
+  - @Access(AccessType.PROPERTY)인 경우에만 해당하고
+  - @Access(AccessType.FIELD)는 id를 호출하더라도 초기화 된다.
+
+## 즉시로딩과 지연로딩
+
+- 즉시로딩
+  - 엔티티를 조회할 때 연관 엔티티도 함께 조회한다
+  - @ManyToOne(fetch = FetchType.EAGER)
+- 지연로딩
+  - 연관 엔티티를 사용하는 시점에 JPQ가 SQL을 사용한다
+  - @ManyToOne(fetch = FetchType.LAZY)
+
+### 즉시로딩
+
+- Team : Member = 1 : N 관계 일때 실행되는 쿼리는 다음과 같다.
+
+  <img width="434" alt="image" src="https://user-images.githubusercontent.com/67682840/234152763-1551469b-ff94-4ca3-b317-1736141b380d.png">
+
+  - 두 테이블을 조회하므로 SQL이 두번 실행 될 것 같지만 실제로는 OUTER JOIN을 사용해 한번만 실행된다
+  - OUTER JOIN인 이유는 선택적 관계이기 때문이다. `@JoinColumn(nullable=false)` 또는 `@ManyToOne(optional = false)`를 추가하면 INNER JOIN으로 변경됨을 알 수 있다.
+
+### 지연로딩
+
+- 위 상황과 같다. 연관 엔티티인 Team에 접근할 때 SQL이 추가적으로 실행된다.
+
+  <img width="359" alt="image" src="https://user-images.githubusercontent.com/67682840/234154141-c0986a83-09c0-4bf5-87e3-41e222676c76.png">
+
+## 지연로딩 활용
+
+- 상황에 따라 지연로딩을 할지 즉시로딩을 할지 결정해야한다. 아래와 같은 상황이 있다고 해보자
+- Member와 연관된 Order는 가끔 사용되어서 LAZY로 결정했다.
+- Member와 연관된 Team은 항상 같이 사용되어 EAGER로 결정했다.
+- 위 상황을 반영한 코드는 다음과 간다.
+
+  ```java
+  @Entity
+  public class Member {
+      @Id
+      private Long id;
+      private String username;
+      private Integer age;
+
+      @ManyToOne(fetch = FetchType.EAGER)
+      private Team team;
+
+      @OneToMany(mappedBy = "member", fetch = FetchType.LAZY)
+      private List<Order> orders;
+  }
+  ```
+ 
+  `em.find(Member.class,~)`를 호출하면 다음과 같다. SQL에서 order와 관련된 내용은 찾아볼 수 없다.
+
+  <img width="378" alt="image" src="https://user-images.githubusercontent.com/67682840/234157227-c379cacd-7dd6-43e0-95af-d3f8faad3ba8.png">
+
+### 프록시와 컬렉션 레퍼
+
+- `em.find(Member.class)`로 조회한 후 orders 객체의 클래스를 출력하면 `List<Order>` 대신 PersistenceBag이 나온다.
+
+  ```
+  org.hibernate.collection.internal.PersistentBag
+  ```
+
+  - 하이버네이트는 엔티티를 영속화 할 때 해당 엔티티에 컬렉션이 있으면 대상을 관리할 목적으로 내장 컬렉션으로 변경하는데 이를 컬렉션 레퍼라고 한다
+  - 프록시와 하는 역할이 비슷하다
+
+### 기본패치전략
+
+- xxx To One : EAGER
+- xxx to Many : LAZY
+- 추천하는 방법은 모든 연관관계를 LAZY로 설정한 후 실제 운영함에 따라서 EAGER로 최적화할지 결정하는 것이 좋다.
+
+### N+1 문제
+
+- Cafe : Coffee = 1 : N 관계가 있다고 가정
+- Cafe는 아래와 같이 작성되었다.
+
+  ```java
+  @Entity
+  public class Cafe {
+      @Id
+      private Long id;
+
+      @Column
+      private String name;
+
+      @OneToMany(mappedBy = "cafe",fetch = FetchType.EAGER)
+      private List<Coffee> list = new ArrayList<>();
+  }
+  ```
+
+- Cafe와 연관관계를 맺고 있는 커피가 1개 있다고 가정할 때, `em.find(Cafe.class,1L)`은 SELECT 가 몇번 실행될까?
+
+  - 실행결과
+
+    ```
+    Hibernate: 
+    select
+        cafe0_.id as id1_0_0_,
+        cafe0_.name as name2_0_0_,
+        list1_.CAFE_ID as cafe_id2_1_1_,
+        list1_.id as id1_1_1_,
+        list1_.id as id1_1_2_,
+        list1_.CAFE_ID as cafe_id2_1_2_ 
+    from
+        Cafe cafe0_ 
+    left outer join
+        Coffee list1_ 
+            on cafe0_.id=list1_.CAFE_ID 
+    where
+        cafe0_.id=?
+    ```
+
+  - Cafe를 하나 조회했을 때 연관엔티티가 select에 포함되는 이유는 EAGER 때문이다.
+
+- `em.createQuery("seelct c from Cafe c where c.id = 1").getSingleResult()` 또한 하나의 객체를 가져오는데, EAGER 이므로 SELECT가 한번 실행될까?
+
+  - 실행결과
+
+    ```java
+     select
+            cafe0_.id as id1_0_,
+            cafe0_.name as name2_0_ 
+        from
+            Cafe cafe0_ 
+        where
+            cafe0_.id=1
+    Hibernate: 
+        select
+            list0_.CAFE_ID as cafe_id2_1_0_,
+            list0_.id as id1_1_0_,
+            list0_.id as id1_1_1_,
+            list0_.CAFE_ID as cafe_id2_1_1_ 
+        from
+            Coffee list0_ 
+        where
+            list0_.CAFE_ID=?
+    ```
+
+    - SELECT가 두번 실행되는 모습을 알 수 있다.
+
+
+- 원인
+  - JPQL은 글로벌 Fetch 전략을 무시하고 JPQL로만 SQL을 생성하기 때문이다
+  - JPARepository에서 인터페이스 메서드를 사용해도 마찬가지 결과이다. 이는 메서드명을 기준으로 JPQL을 생성하기 때문이다.
+
+- EAGER인 경우
+  - JPQL에서 SQL을 생성해 쿼리 실행
+  - Fetch전략이 EAGER 이므로 연관 엔티티 사용 여부에 관계 없이 즉시 하위 엔티티를 추가조회
+
+- Lazy인 경우
+  - JPQL에서 SQL을 생성해 쿼리 실행
+  - Fetch전략이 LAZY 이므로 즉시 하위 엔티티를 조회하지는 않지만 연관 엔티티를 사용하는 시점에 쿼리가 발생해 결국 N+1 문제 발생
+
+- 해결책
+  - Fetch Join
+    - 직접 JPQL에 fetch join을 명시하면 된다.
+  - `@EntityGraph`
+  - 자세한겐 뒤에서 다루도록 하자.
+
+### 컬렉션에 FetchType.EAGER 사용시 주의점
+
+- 컬렉션을 하나 이상 즉시로딩 하는 것을 권장하지 않는다
+
+  위 내용을 확인하기 위해 아래처럼 작성했다.
+
+  ```java
+  @Entity
+  public class Member {
+      @Id
+      private Long id;
+      private String username;
+      private Integer age;
+
+      @ManyToOne(fetch = FetchType.LAZY)
+      private Team team;
+
+      @OneToMany(mappedBy = "member", fetch = FetchType.EAGER)
+      private List<Order> orders = new ArrayList<>();
+
+      @OneToMany(mappedBy = "member",fetch = FetchType.EAGER)
+      private List<Child> children = new ArrayList<>() ;
+  }
+  ```
+
+  실행하면 MultipleBagException 이라는 것이 발생한다.
+
+  <img width="1419" alt="image" src="https://user-images.githubusercontent.com/67682840/234175600-a4216917-dc6c-486e-afd0-c2e4eb2ec672.png">
+
+  - MultipleBagException?
+    - BagType을 동시에 Fetch 해 올때 발생하는 문제
+    - Bag(MultiSet)란 Set과 같이 순서가 없고 List와 같이 중복을 허용하는 자료구조
+    - 자바에서는 Bag이 없기 때문에 하이버네이트에서는 List를 Bag로 사용하고 있다.
+    - 문제를 해결하기 위해선 둘 중 하나를 List로 변경해야한다.
+    - JPA는 BagType이 두개이상 로드되는 것을 허용하지 않는다!
+
+  - 다시 원론으로 돌아와서 각 테이블의 데이터가 N, M이라면 쿼리의 실행결과가 N*M개가 되므로 애플리케이션의 성능저하가 발생한다.
+
+- 컬렉션 즉시로딩은 항상 OUTER JOIN을 사용한다.
+  
