@@ -1709,3 +1709,133 @@ public static void logic(EntityManager em) {
 
 - 컬렉션 즉시로딩은 항상 OUTER JOIN을 사용한다.
   
+## 영속성 전이 : CASCADE
+
+- 특정 엔티티를 영속 상태로 만들기 위해서는 연관 엔티티는 영속화 되어있어야 한다
+- Parent : Child = 1 : N 관계에서 부모를 영속화 한 후 자식을 영속화 해야한다.
+- CascadeType.PERSIST 옵션을 사용하면 부모 엔티티만 영속화해도 자식 엔티티가 영속화 된다.
+
+  [코드]
+  ```java
+  @Entity
+  public class Cafe {
+      @Id @GeneratedValue
+      private Long id;
+
+      @Column
+      private String name;
+
+      @OneToMany(mappedBy = "cafe", cascade = CascadeType.PERSIST)
+      private List<Coffee> list = new ArrayList<>();
+  }
+  ```
+
+  ```java
+  //PERSIST 예시
+  public static void logic(EntityManager em) {
+
+      Cafe cafe = new Cafe();
+      cafe.setName("ediya");
+
+      Coffee iceCoffee = new Coffee();
+      iceCoffee.setCafe(cafe);
+      cafe.getList().add(iceCoffee);
+
+      Coffee hotCoffee = new Coffee();
+      hotCoffee.setCafe(cafe);
+      cafe.getList().add(hotCoffee);
+
+      em.persist(cafe);
+    }  
+  ```
+
+- Cascade.DELETE를 사용하면 부모 객체만 가져와서 삭제하면 된다. 
+
+  [전]
+  ```java
+  Cafe cafe = em.find(Cafe.class,1L);
+  Coffee iceCoffee = em.find(Coffee.class,2L);
+  Coffee hotCoffee = em.find(Coffee.class,3L);
+
+  em.remove(iceCoffee);
+  em.remove(hotCoffee);
+  em.remove(cafe);
+  ```
+
+  [후]
+  ```java
+  Cafe cafe = em.find(Cafe.class,1L);
+  em.remove(cafe);
+  ```
+
+- 영속성 전이를 설정해도 `flush()` 시점에 전이가 발생한다.
+
+## 고아 객체
+
+- 부모 엔티티와 연관관계가 끊어진 자식 엔티티를 자동으로 삭제하는 기능을 제공한다.
+- 부모 엔티티의 컬렉션에서 자식 엔티티의 참조를 제거하면 자식 엔티티가 자동으로 삭제된다
+
+  [코드]
+  ```java
+  public class Cafe {
+    @Id @GeneratedValue
+    private Long id;
+
+    @Column
+    private String name;
+
+    @OneToMany(mappedBy = "cafe",orphanRemoval = true)
+    private List<Coffee> list = new ArrayList<>();
+  }
+  ```
+
+  책에서는 다음 코드를 실행하면 delete 쿼리가 발생한다고 한다.
+  ```java
+  Cafe cafe = em.find(Cafe.class,1L);
+  cafe.getList().remove(0);
+  ```
+
+  하지만 delete 쿼리가 발생하지 않았다! JPA 스펙상에서는 동작해야하는데 하이버네이트는 PERSIST와 orphanRemoval이 관계를 맺고 있어서 발생하는 문제라고 한다. 
+  - https://www.inflearn.com/questions/137740/orphanremoval%EA%B3%BC-cascade%EC%9D%98-%EA%B4%80%EA%B3%84
+
+  orphanRemoval 자체를 잘 사용하진 않지만 정상적으로 동작하길 기대한다면 `cascade = CascadeType.PERSIST`를 추가하자
+
+- 부모 엔티티를 삭제하면 연관된 자식 엔티티도 같이 삭제된다는 점에서는 `cascade = CascadeType.REMOVE`와 동일하게 동작한다.
+
+## 영속성 전이 + 고아 객체, 생명주기
+
+- CascadeType.ALL + orphanRemoval = true를 사용하면 부모 엔티티에서 자식 엔티티의 생명주기를 관리할 수 있게 된다.
+
+<br>
+
+# 9장, 값 타입
+
+## 기본 값 타입
+
+## 임베디드 타입
+
+- 자바에서 기본적으로 제공하는 타입 대신 직접 정의해서 사용할 수도 있다.
+- 여러개의 변수를 좀 더 의미있는 단위로 만들 수 있다.
+
+  ```java
+  @Entity
+  public class Member {
+    @Id @GeneratedValue
+    private Long id;
+
+    @Embedded
+    private Address address;
+  }
+  ```
+
+  ```java
+  @Embeddable
+  @Getter @Setter
+  public class Address {
+      private String city;
+      private String street;
+      private String zipCode;
+  }
+  ```
+
+- 임베디드 타입은 기본생성자가 필수이다.(이유는 잘 모르겠다.)
