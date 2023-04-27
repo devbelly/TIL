@@ -221,3 +221,176 @@ optional.ifPresent(h -> {
   - 메서드를 호출
 - 성능 문제를 항상 고려해야한다.
 - Spring에서 어노테이션 검사시 리플렉션 기능을 활용할 수 있다
+
+<br>
+
+# 2장, 생성자에 매개변수가 많다면 빌더를 고려하라.
+
+- 필수 매개변수 & 선택적 매개변수가 많다면 점층적 생성자 패턴을 사용할 수 있다.
+
+  매개변수가 적은 생성자에서 매개변수가 많은 생성자를 호출한다.
+  ```java
+  class Person{
+    private final int age;
+    private final int iq;
+    private final int eq;
+
+    Person(int age){
+      this(age,10);
+    }
+
+    Person(int age,int iq){
+      this(age,iq,10);
+    }
+
+    Person(int age,int iq, int eq){
+      this.age = age;
+      this.iq = iq;
+      this.eq = eq;
+    }
+  }
+  ```
+
+  - 클라이언트 코드를 작성하기 어렵다.
+
+    ```java
+    new Person(180,70,0);
+    ```
+
+    - 각 매개변수의 의미를 한번에 파악하기 어려우며 클라이언트를 몇번째 값이 어떤 의미인지 파악하고 있어야 한다.(물론 코틀린은 이 문제를 해결함)
+
+- 두번째 대안으로 자바빈즈 패턴을 사용할 수 있다.
+
+  <img width="500" alt="image" src="https://user-images.githubusercontent.com/67682840/234449487-32b2459e-c1c2-4f77-be15-9ce97f7d6e4c.png">
+
+  - 단점
+    - 여러 메서드를 호출해야한다.
+    - 객체가 완전히 생성되기까지 일관성이 무너진 상태이다.(도대체 어느 속성까지 초기화를 해야 온전한가?)
+
+      자바빈즈 패턴을 사용하면 아래처럼 생성자 내에서 유효성 검사를 하지 못하므로 일관성이 무너지기 쉽다.
+
+      <img width="582" alt="image" src="https://user-images.githubusercontent.com/67682840/234449936-247f0d9f-9cce-405a-9259-369f767fd6fc.png">
+
+      - 이를 통해서 불변 객체를 생성하지 못하므로 런타임시 오류 가능성과 멀티쓰레드 환경에서의 안전성을 보장받지 못한다.(세터를 열어두는 것은 위험)
+- 세번째 대안으로 빌더패턴을 사용할 수 있다.
+  - 필수 매개변수로 빌더 객체를 생성하고
+  - 선택 매개변수를 선택하고
+  - build 메서드를 호출해 필요한 객체를 얻는다.
+      
+**왜 위 코드에서 private 생성자에 @Builder를 붙였을까?**
+
+- @Builder는 클래스레벨, 생성자레벨에 사용가능
+- 클래스레벨에 사용시, 모든 속성을 인자로 갖는 package-private 수준의 생성자가 생성된다.
+
+  ```java
+  @Builder
+  public class BuildMe{
+    private String username;
+    private int age;
+  }
+  ```
+
+  ```java
+  public class BuildMe{
+    private String username;
+    private int age;
+
+    BuildMe(String username, int age){
+      this.username = username;
+      this.age = age;
+    }
+
+    ...// builder 관련 코드
+  }
+  ```
+
+- `BuildMe`는 내부 빌더클래스에서 접근할 것이므로 굳이 package-private일 필요는 없다. 이를 위해 클래스 레벨에서 @Builder를 사용하는 대신 생성자레벨에서 @Builder를 사용하자
+
+- 교재에서 언급한대로 `checkArgument`를 통해 빌더의 생성자에서 입력매개변수를 검사함을 알 수 있다.(불변식)
+
+**재귀적 타입 매개변수 제한**
+
+- 다음 코드를 살펴보자
+
+  <img width="538" alt="image" src="https://user-images.githubusercontent.com/67682840/234758838-cd5ff103-c468-4f0b-9072-7fd657f54526.png">
+
+  - 제네릭에서 타입의 상한에 제한을 걸 때 자기 자신에게 제한을 거는 것을 재귀적인 매개변수 제한이라고 한다. 
+
+- `sort` 에서 이러한 예시를 볼 수 있다. 이 코드를 이해하기 위해 `sort`를 살펴보자
+
+  - 자바에서는 어떠한 타입이든 상관없이 타입간 비교가 가능하다면 정렬이 가능하다. 
+
+    ```java
+    public static <T> void sort(List<T> list){
+      ...
+      if(list.get(i).compareTo(list.get(j)))
+      ...
+    }
+    ```
+
+  - 이 코드의 문제점은 T가 비교가능한 값인지 알 수 없다는 점이다. 타입제한을 걸기 위해 `Comparable<T>` 인터페이스를 정의해보자
+
+    ```java
+    public interface Comparable{
+      public int compareTo(int o);
+    }
+    ```
+
+  - 이처럼 정의하면 int값에 대한 비교만 가능해진다. 우리가 원하는 것은 int뿐만 아니라 비교가능한 타입이 오기를 기대한다. 
+
+    ```java
+    public interface Comparable<T>{
+      public int compareTo(T o);
+    }
+    ```
+
+  - 어떤 타입 A가 `comparable<B>`의 서브타입이라면 무엇을 의미할까? 이것은 타입 A는 B타입과 비교가능한 메서드를 가지고 있다를 의미하고 다시말해 타입 A와 B의 비교가 가능해진다
+
+  - 마지막으로 T가 `comparable<T>`의 서브타입이라면 타입 T는 T와 비교가능한 메서드를 가지고 있고 이는 타입 T끼리 비교가 가능하다는 의미이다.
+
+  - 즉, 최종적으로 구현할 sort함수는 다음과 같은 모습을 한다
+
+    ```java
+    public static <T extends Comparable<T>> void sort(List<T> list){
+      ...
+    }
+    ```
+- 위 내용을 토대로 추상 클래스 builder를 이해해보자
+
+  - `T extends Builder<T>`에서 T는 addTopping이나 self 메서드에서 사용되고 이러한 T는 아무타입이나 오는 대신 Builder나 Builder를 상속하는 하위 클래스가 오기를 기대한다.
+
+    <img width="548" alt="image" src="https://user-images.githubusercontent.com/67682840/234761755-d8168768-3c24-4b7e-8b44-bcda306b3736.png">
+
+  - Ny.Pizza의 Builder는 Pizza.Builder가 요구하는 메서드를 다 구현했고, `<Builder>`에 NyPizza.Builder 타입을 넘겨줌으로써 자신이 사용하는 메서드에서 다루는 타입은 Pizza.Builder의 하위타입임을 만족한다.
+
+**self()**
+
+- 피자 추상 클래스에 속한 빌더는 `self()` 메서드를 제공한다
+  
+  <img width="535" alt="image" src="https://user-images.githubusercontent.com/67682840/234762514-83af677a-04bb-4628-a272-a70a976a4337.png">
+
+- self() 대신 this를 리턴하게 되면 하위타입 빌더 사용시 항상 타입 캐스팅을 해야하는 문제가 있다.
+
+**IllegalArgumentException**
+
+- 잘못된 인자를 넘겨받았을 때 사용할 수 있는 런타임 예외
+- CheckedException vs UncheckedException
+  - CheckedExcpetion : `try-catch`로 예외를 처리하거나 다시 던져야한다. 복구 가능
+  - UncheckedException : 클라이언트가 예외를 처리할 수 없을 때 사용. 복구 불가능
+- 예외를 던질때는 잘못된 파라미터나 필드에 대한 정보를 넘겨주는 것이 좋다.
+- 하위 계층에서 CheckException을 사용하면 상위 계층까지 해당 예외에 대한 의존성이 전파되므로 주의해서 사용해야한다.
+
+**가변인수를 여러개 사용할 수 있다**
+
+- 가변인수는 메서드에 하나만 쓸 수 있고 가장 마지막에 선언할 수 있다.
+  
+  ```java
+  public class Person{
+      public void test(int... grades){
+        ...something..
+      }
+  }
+  ```
+
+- 빌더를 활용하면 각 메서드마다 가변인수를 하나씩 사용할 수 있으므로 여러개의 가변인수를 사용할 수 있다는 장점이 있다.
+
