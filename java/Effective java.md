@@ -394,3 +394,128 @@ optional.ifPresent(h -> {
 
 - 빌더를 활용하면 각 메서드마다 가변인수를 하나씩 사용할 수 있으므로 여러개의 가변인수를 사용할 수 있다는 장점이 있다.
 
+<br>
+
+# 3장, private 생성자나 열거 타입으로 싱글턴임을 보장하라
+
+- 싱글톤은 유일해야하는 시스템 컴포넌트이다.
+- 클래스를 싱글톤으로 만들면 테스트하기 어렵다.
+
+## 싱글톤을 만드는 방법
+
+- public static 멤버를 통해 private 생성자에 접근하도록 한다.
+- public static final 필드를 사용하거나 public static 메서드를 사용하는 방법이 있다.
+- 단점
+  - Reflection을 통해 private 생성자에 접근할 수 있다.
+    
+    ```java
+    Constructor<Elvis> defaultConstructor = Elvis.class.getDeclaredConstructor();
+    defaultConstructor.setAccessable(true);
+    ...
+    ```
+
+    이 문제는 flag를 선언해 private 생성자에서 하나만 생성하도록 관리할 수 있다.
+    
+    ```java
+    public class Elvis{
+      public static final Elvis Instance = new Elvis();
+      private Elvis(){
+        if(flag){
+          Throw new Exception();
+        }
+        flag=true;
+      }
+    }
+    ```
+    
+  - 역직렬화시 새로운 인스턴스가 생성된다 
+
+    - 객체를 직렬화를 통해 외부에 저장했다가 역직렬화로 다시 읽어올 수 있다.
+    - 역직렬화 과정에서 동일한 객체가 생성될것이라고 기대할 수 있지만 실제로는 새로운 객체가 생성된다
+    - `readResolve()`를 오버라이딩함으로써 이 문제를 해결할 수 있다.
+
+      ```java
+      private Object readResolve(){
+        return INSTANCE;
+      }
+      ```
+
+- public static 메서드
+
+  ```java
+     public class Elvis<T> {
+      private static final Elvis INSTANCE = new Elvis();
+
+      private Elvis() {
+      }
+
+      public static Elvis getInstance() { return INSTANCE; }
+    } 
+  ```
+
+  - 필요하다면 쓰레드마다 객체를 생성해서 리턴하도록 수정할수 있다. 클라이언트 코드를 변경하지 않기 때문이다.
+
+**정적 팩터리를 제네릭 싱글톤 팩토리로 만들 수 있다**
+
+  - 제네릭을 사용하는 클래스에 대해 싱글톤으로 만들고 싶다면 `제네릭 싱글톤 팩토리`를 사용할 수 있다.
+ 
+  - 원하는 타입을 사용할 수 있다는 장점이 있다.
+
+    ```java
+    public class Elvis<T> {
+      private static final Elvis INSTANCE = new Elvis();
+
+      private Elvis() {
+      }
+
+      public static <T> Elvis<T> getInstance() {
+          return (Elvis<T>) INSTANCE;
+      }
+
+      public void leaveTheBuilding() {
+          System.out.println("Whoa baby, I'm outta here!");
+      }
+
+      // 이 메서드는 보통 클래스 바깥(다른 클래스)에 작성해야 한다!
+      public static void main(String[] args) {
+          Elvis<Integer> elvis1 = Elvis.getInstance();
+          Elvis<String> elvis2 = Elvis.getInstance();
+          System.out.println(elvis1);
+          System.out.println(elvis2);
+      }
+    } 
+    ```
+
+    [실행결과]
+    ```
+    effectivejava.chapter2.item3.staticfactory.Elvis@2f92e0f4
+    effectivejava.chapter2.item3.staticfactory.Elvis@2f92e0f4    
+    ```
+
+**정적 팩토리의 메서드 참조를 공급자로 사용할 수 있다**
+
+- Supplier는 LazyEvaluation을 위해 사용되는 기능
+
+  <img width="263" alt="image" src="https://user-images.githubusercontent.com/67682840/235085486-739c5f2e-4fab-464a-8995-19e333daa025.png">
+
+  - 인자로는 아무것도 받지 않고 객체를 리턴하는 모습임을 알수 있다.
+  - `getInstance()`를 보면 인자로는 아무것도 받지않고 객체를 리턴하는 형태
+  - 이러한 이유로 supplier를 사용하는 곳에 `Elvis::getInstacne`를 넘겨줘 사용할 수 있다.
+
+- 코드
+  
+  ```java
+  public static void test(Supplier<Elvis> test){
+        test.get();
+  }
+  //test(Elvis::getInstance)와 같이 사용가능하다.
+  ```
+
+- Enum을 통한 싱글톤 객체 생성
+  - 위에서 언급한 두가지 단점, 리플렉션과 역직렬화에 대한 문제가 해결되므로 Enum을 통한 싱글톤 객체 생성을 권장
+
+  - 사용예시(배달의민족)
+
+    <img width="853" alt="image" src="https://user-images.githubusercontent.com/67682840/235092495-72487329-f605-42fd-832f-f02f59e48649.png">
+
+
