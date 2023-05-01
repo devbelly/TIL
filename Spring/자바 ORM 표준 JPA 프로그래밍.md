@@ -1839,3 +1839,200 @@ public static void logic(EntityManager em) {
   ```
 
 - 임베디드 타입은 기본생성자가 필수이다.(이유는 잘 모르겠다.)
+
+### @AttributeOverride: 속성 재정의
+
+- 한 엔티티에 동일한 임베디드 타입을 사용하면 컬럼명이 겹친다.
+- `@AttributeOverrides`를 사용해서 중복되는 컬럼명의 이름을 변경한다
+  
+### 값 타입 공유
+
+- 임베디드 타입을 공유하게 되면 Side Effect가 발생할 수 있따.
+
+  ```java
+  public static void logic(EntityManager em) {
+    Member member = new Member();
+    Address address = new Address();
+    address.setCity("city");
+    address.setStreet("street");
+    address.setZipCode("zip Code");
+    member.setAddress(address);
+
+    em.persist(member);
+
+    Member member2 = new Member();
+    address.setCity("New City");
+    member2.setAddress(address);
+
+    em.persist(member2);
+  }
+  ```
+
+  - 실행하게 되면 member의 city 또한 New City로 변경된다.
+  - 자바에는 기본타입과 객체타입이 있는데 기본타입은 `=`연산자 사용시 자동으로 '복사'가 이루어진다
+  - 하지만 값 타입은 객체타입이므로 `=`연산자 사용시 주소값을 복사하므로 공유참조 문제가 발생한다.
+
+### 불변 객체
+
+- 조회는 가능하지만 수정이 불가능한 객체를 불변객체라고 한다
+- 여러가지 방법으로 구현이 가능하지만 생성자로만 값을 설정하고 세터를 열어두지 않는다.
+- 불변이라는 작은 규약으로 부작용이라는 나쁜 결과를 막을 수 있다.
+
+### 값 타입의 비교
+
+- `int a = 10`, `int b = 10`에서 a와 b가 같으므로
+- Address 객체에서 안에 있는 필드의 값들이 동일하다면 같다고 판단해야한다
+- 즉, 값 타입을 사용할때는 `equals` 메서드를 재정의 하자.
+  - `equals`를 재정의 했다면 `hashCode` 또한 재정의하자. 해시 기반의 자료구조에서는 hashCode도 사용해 비교하기 때문이다.
+
+### 값 타입 컬렉션
+
+- 값 타입 하나 이상을 저장하려고 하면 다음 오류가 발생한다.
+
+  <img width="594" alt="image" src="https://user-images.githubusercontent.com/67682840/235408773-0ca72dd7-a364-416d-854e-2f7de872ec25.png">
+
+- 값 타입을 하나 이상 저장하려면 컬렉션에 보관하고 `@ElementCollection`, `@CollectionTable`을 어노테이션을 사용해야한다.
+
+  <img width="726" alt="image" src="https://user-images.githubusercontent.com/67682840/235409111-2de231e9-a6ba-429c-9280-472970e13c1f.png">
+
+- 값 타입 컬렉션은 영속성 전이 + 고아 객체 제거 기능이 필수로 들어가있다.
+
+### 값 타입 컬렉션의 제약
+
+- 엔티티는 식별자를 기준으로 데이터베이스에서 검색하면 되므로 크게 문제가 안된다.
+- 값타입도 컬렉션이 아닌 단일 형태면 엔티티를 검색해 수정하면 된다.
+- 하지만 값 타입 컬렉션의 경우 테이블로 저장하게 된다
+  - 테이블에 식별자가 없으므로 값 타입 컬렉션중 값 하나를 수정하게 되면 값 타입 컬렉션 테이블에 관련된 모든 데이터를 삭제한 후 컬렉션에 있는 값의 갯수만큼 INSERT가 발생한다
+
+    이 코드를 실행하면 INSERT가 2번 발생한다.
+    ```java
+    public static void logic(EntityManager em) {
+      Member member = new Member();
+
+      List<Address> addresses = member.getAddress();
+      Address address1 = new Address("city1","street1","zipCode1");
+      Address address2 = new Address("city2","street2","zipCode2");
+      addresses.add(address1);
+      addresses.add(address2);
+
+      em.persist(member);
+      em.flush();
+      em.clear();
+
+      Member findMember = em.find(Member.class,1L);
+      findMember.getAddress().get(0).setStreet("new Street");
+    }
+    ```
+
+- 결론
+  - 값 타입 컬렉션 테이블에 데이터가 많다면 일대다 관계를 사용할 것을 권장한다
+  - 영속성 전이 + 고아 객체 제거 옵션을 사용한다면 값 타입 컬렉션처럼 사용할 수 있다.
+
+### 정리
+
+- 식별자가 필요하고 지속적으로 추적하고 변경하려면 값 타입이 아닌 엔티티로 사용하자
+
+<br>
+
+# 10장, 객체지향 쿼리 언어
+
+- 애플리케이션을 개발하다보면 복잡한 쿼리를 작성해야할 필요성이 있다.
+- 데이터베이스의 모든 데이터를 메모리에 올려서 필터링 하기는 현실적으로 무리가 있다.
+- ORM을 사용하면 데이터베이스 중심이 아닌 객체지향적으로 개발을 하게 된다.
+- 이러한 이유로 객체지향 쿼리를 작성할 필요가 있다.
+- JPQL은 객체지향 쿼리로 다음과 같은 특징이 있다.
+  - 데이터베이스 중심이 아닌 객체를 중심으로 쿼리를 작성한다.
+  - 특정 데이터베이스에 의존적이지 않다.
+- QueryDSL, Criteria 등 JPQL를 편리하게 사용해주는 도구이므로 JPQL에 대해 잘 알아두는것이 좋다.
+
+## JPQL
+
+- Member를 조회하는 JPQL은 다음과 같다.
+
+  ```java
+  String jpql = "select m from Member m where m.id = 1L";
+  Member jpqlMember = em.createQuery(jpql,Member.class).getSingleResult();
+  ```
+
+- 위 코드를 실행해보면 영속성 컨텍스트에 Member가 존재하는 것과 관계없이 무조건 `SELECT`를 실행한다
+- JPQL vs find
+  - find는 영속성 컨텍스트를 우선적으로 조회하고 해당 엔티티가 없다면 데이터베이스에서 조회
+  - JPQL은 데이터베이스에서 우선적으로 조회하고 해당 엔티티가 영속성 컨텍스트에 있다면 데이터베이스에서 조회한 결과를 버린다.
+
+### Criteria
+
+- JPQL을 생성해주는 쿼리 빌더
+- JPQL을 문자가 아닌 코드로 생성
+  - JPQL을 직접 작성하면 오타가 있어도 잡아내지 못함, 런타임때 해당 문제를 발견할 수 있음
+  - Criteria로 작성하면 컴파일 시점에 오타를 잡아낼 수 있다.
+- 객체의 필드 (Member의 username 필드)까지는 코드로 관리하지 못하는데 MetaModel API를 사용하면 필드까지 코드로 관리할 수 있다.
+- 장점도 많지만 사용하기 복잡하다
+
+### JPQL 특징
+
+- SQL과 비슷하게 SELECT, UPDATE, DELETE를 사용할 수 있다.
+- INSERT는 `em.persist`를 사용하면 되므로 없다.
+- JPQL의 UPDATE나 DELETE는 벌크연산이다.
+- `SELECT m FROM Member AS m where m.username = 'Hello'`
+  - 대소문자 구분
+    - 엔티티와 속성은 대소문자를 구분한다(Member, username)
+    - JPQL 문법은 대소문자를 구분하지 않는다
+  - 별칭 사용은 필수
+    - `select username from Member m` 이라고 작성하면 `m.username`이 아니므로 오류가 발생한다.
+  
+**TypedQuery,Query**
+
+- 생성한 JPQL을 실행하려면 쿼리 객체가 필요
+- 반환할 타입을 명확히 할 수 있으면 TypedQuery, 아니라면 Query를 리턴한다
+- TypedQuery 예시
+  
+  ```java
+  String jpql = "select m from Member m where m.id = 1L";
+  TypedQuery<Member> typedQuery = em.createQuery(jpql,Member.class);
+  Member findMember = typedQuery.getSingleResult();
+  ```
+
+- Query 예시
+
+  ```java
+  String jpql = "select m.id, m.username from Member m where m.id = 1L";
+  Query query = em.createQuery(jpql);
+  Object object = query.getSingleResult();
+  Object[] result = (Object[])object;
+
+  System.out.println(result[0]);
+  System.out.println(result[1]);
+  ```
+  - 검색 결과가 Long와 String 이므로 리턴타입이 명확하지 않아 Query를 사용하는 것이 옳다.
+
+
+**결과 조회**
+
+- 실제 데이터베이스에 조회를 한다
+  - `getResultList()` : 조회 결과를 리스트형태로 반환, 없다면 비어있는 리스트 반환
+  - `getSingleResult()` : 조회 결과가 단 하나가 아니라면 예외 발생
+
+### 파라미터 바인딩
+
+- 위치기반 파라미터 바인딩
+
+  ```java
+  String jpql = "select m from Member m where m.id = ?1";
+  Member jpqlMember = em.createQuery(jpql,Member.class)
+          .setParameter(1,1L)
+          .getSingleResult();
+  ```
+
+- 이름기반 파라미터 바인딩
+
+  ```java
+  String jpql = "select m from Member m where m.id = :username";
+  Member jpqlMember = em.createQuery(jpql,Member.class)
+          .setParameter("username",1L)
+          .getSingleResult();
+  ```
+
+- JPQL을 직접 작성하면 
+  - 악의적인 사용자에 의해 SQL Injection의 위험이 있고
+  - JPA와 데이터베이스에서 사용하는 쿼리 파싱을 재사용하지 못하므로 성능도 저하한다.
+  - 파라미터 바인딩은 선택이 아닌 필수!
