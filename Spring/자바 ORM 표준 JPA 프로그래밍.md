@@ -2036,3 +2036,183 @@ public static void logic(EntityManager em) {
   - 악의적인 사용자에 의해 SQL Injection의 위험이 있고
   - JPA와 데이터베이스에서 사용하는 쿼리 파싱을 재사용하지 못하므로 성능도 저하한다.
   - 파라미터 바인딩은 선택이 아닌 필수!
+
+## 프로젝션
+
+- SELECT 절에서 조회할 대상을 지정하는 것이 프로젝션
+- 엔티티, 임베디드 타입, 스칼라 타입이 올 수 있다.
+- 엔티티가 프로젝션 대상이라면 영속성 컨텍스트로 관리된다.
+- 임베디드 타입은 값 타입 이므로 영속성 컨텍스트로 관리되지 않는다.  
+
+### new
+
+- 스칼라 타입을 프로젝션 대상으로 두면 `Object[]`를 사용해야한다.
+- 이를 직접 다루는 것은 불편하므로 DTO 객체를 만들어서 사용하도록 하자.
+- 코드
+  
+  ```java
+  public static void logic(EntityManager em) {
+    String jpql = "SELECT new jpabook.start.UserDTO(m.username,m.age) FROM Member m";
+    TypedQuery<UserDTO> query = em.createQuery(jpql,UserDTO.class);
+    List<UserDTO> list = query.getResultList();
+    for(UserDTO x : list){
+        System.out.println(x.getUsername());
+        System.out.println(x.getAge());
+    }
+  }
+  ```
+
+**세타 조인**
+
+- WHERE 절을 사용해서 세타 조인을 지원한다.
+- 내부 조인만 지원한다
+  - 조건을 만족하는 결과만 반환한다
+- 전혀 관련없는 엔티티도 조인할수 있다.
+- 코드
+  
+  ```java
+  em.createQuery("select m, c from Member m, Coffee c where m.id = c.id").getResultList();
+  ```
+
+  ```
+  select
+      member0_.id as id1_1_0_,
+      coffee1_.id as id1_0_1_,
+      member0_.age as age2_1_0_,
+      member0_.username as username3_1_0_ 
+  from
+      Member member0_ cross 
+  join
+      Coffee coffee1_ 
+  where
+      member0_.id=coffee1_.id
+  ```
+
+**ON**
+
+- JPA 2.1 부터 JPQL join on을 지원한다.
+- JOIN을 하기전 필터링 한다
+- 내부조인은 WHERE을 사용하는 것과 결과가 같으므로 외부조인시에만 사용된다
+  - 외부조인은 조건에 맞지않더라도(ON 절을 만족하지 않더라도) 결과값을 포함해서 리턴한다.
+  - 하지만 내부조인은 조건에 맞는 결과행만 반환하므로 WHERE을 사용한 것과 결과가 같다
+  - WHERE은 JOIN 이후 모든 행에 대해 필터링을 하기 때문에 외부조인 ON 과 WHERE은 다르다
+
+### 페치 조인
+
+- JPQL에서 성능 최적화를 위해 제공하는 기능
+- 연관 엔티티나 컬렉션을 한 번에 조회하는 기술이다.
+
+**엔티티 페치 조인**
+
+- `em.createQuery("select m from Member m join fetch m.team")`
+- `m.team` 이후에 별칭을 사용하지 않았다. 패치 조인은 별칭을 사용할 수 없다.
+- 하지만 하이버네이트는 별칭을 허용한다
+- 실행결과
+  
+  ```
+  select
+    member0_.id as id1_1_0_,
+    team1_.id as id1_2_1_,
+    member0_.age as age2_1_0_,
+    member0_.TEAM_ID as team_id4_1_0_,
+    member0_.username as username3_1_0_,
+    team1_.teamName as teamname2_2_1_ 
+  from
+      Member member0_ 
+  inner join
+      Team team1_ 
+          on member0_.TEAM_ID=team1_.id   
+  ```
+
+  select m 만 했는데도 member도 같이 선택이 되었음을 알 수 있다.
+- 팀과 멤버를 지연로딩으로 설정하더라도 fetch join을 사용하면 연관 엔티티를 프록시가 아닌 실제 객체로 가져온다.
+- 엔티티는 영속성 컨텍스트로 관리되므로 멤버가 준영속 상태여도 팀은 영속성 컨텍스트로 관리된다.
+
+**컬렉션 페치 조인**
+
+- JPQL은 JOIN 시 연관 엔티티를 갖고 조인을 하게 된다
+- Team에서 members를 페치조인하는 쿼리를 작성해보자
+- 코드
+  
+  ```java
+  List<Team> list = em.createQuery("select t from Team t join fetch t.members",Team.class).getResultList();
+  ```
+- 그림
+
+  <img width="613" alt="image" src="https://user-images.githubusercontent.com/67682840/235600525-3fa159b0-1ecb-437a-9be4-f201b9c830da.png">
+
+- 원하는 결과는 하나의 팀 객체에 여러 멤버들이 담기는 것을 기대한다
+- 하지만 그림 10.7과 같이 일대다조인 특성상 결과값이 증가한다.
+- 실행결과
+  
+  ```
+  alpha jpabook.start.Team@a565cbd
+  memberA
+  memberB
+  alpha jpabook.start.Team@a565cbd
+  memberA
+  memberB
+  ```
+
+- 동일한 팀이 두번 조회되었다.
+- 이를 방지하기 위해서는 distinct를 추가하자
+  - 데이터베이스 SQL에서 distinct를 사용하고
+  - 애플리케이션에서 다시 한번 중복을 제거해주는 효과가 있다.
+
+**페치 조인의 특징과 한계**
+
+- SQL한번으로 연관된 엔티티를 한 번에 조회할 수 있어서 성능을 최적화할 수 있다.
+- 페치 조인은 글로벌 로딩 전략보다 앞선다.
+- 즉, 지연로딩을 설정해도 JPQL에서 페치 조인을 사용하면 연관 엔티티를 한 번에 조회한다.
+- 글로벌 로딩 전략은 LAZY로, 필요한 경우 페치 조인을 사용하는 것이 적절하다.
+
+**페치 대상에 별칭을 줄 수 없다**
+- JPA는 페치 대상에 별칭을 주지 않도록 한다.
+  - Eclipselink는 별칭, on 사용가능
+  - 하이버네이트는 별칭 사용가능하지만 on 사용 불가능
+- 별칭을 잘못 사용하면 데이터 무결성이 깨질수 있고 특히 2차 캐시를 사용하는 경우 문제가 발생한다.
+  - 예를 들어 Team : Member = 1 : 2 
+  - `select distinct from Team t join fetch t.member where member.id = 1L` 와 같이 작성
+  - JPQL 상으로는 팀에게 연관된 멤버는 1개, 하지만 객체상으론 2개의 멤버가 있을 것이라고 기대
+  - 데이터 무결성이 깨진다.
+  - 굳이 사용하려면 stateless session을 사용해서 1, 2차 캐시를 무효화하자.
+  
+**둘 이상이 컬렉션을 페치할 수 없다**
+- 구현체에 따라 되기도 한다.
+- 하이버네이트에서는 둘 이상의 컬렉션을 가지고 오려고 하면 카테시안곱으로 만들어지므로 multibagfetchexception 예외가 발생한다.
+
+**컬렉션을 페치조인 하면 페이징 API(setFirstResult, setMaxResult)를 사용할 수 없다**
+- 일대다가 아닌 일대일, 다대일은 페치 조인을 사용하더라도 페이징 API를 사용할 수 있다.
+
+### 경로표현식
+
+- 쉽게말해 .을 통해서 필드나 프로퍼티에 접근하는 것
+- 필드의 종류는 세가지가 있다.
+  - 상태 필드 : 단순히 값을 저장하기 위한 필드
+  - 단일 값 연관필드: @ManyToOne, @OneToOne을 위한 엔티티
+  - 컬렉션 값 연관필드: @OneToMany, @ManyToMany를 위한 엔티티
+
+**경로 표현식과 특정**
+- 상태 필드 경로 : 경로 탐색의 끝이다. 더는 탐색할 수 없다.
+- 단일 값 연관 경로 : 묵시적으로 내부조인이 일어난다, 계속해서 탐색할 수 있다. 
+
+  [코드]
+  ```java
+  em.createQuery("select m.team from Member m",Team.class).getSingleResult();
+  ```
+
+  [실행결과]
+  ```java
+  select
+      team1_.id as id1_2_,
+      team1_.teamName as teamname2_2_ 
+  from
+      Member member0_ 
+  inner join
+      Team team1_ 
+          on member0_.TEAM_ID=team1_.id
+  ```
+
+  - 명시적으로 join을 사용하지 않았어도 inner join이 사용된 것을 알 수 있다.
+  
+
