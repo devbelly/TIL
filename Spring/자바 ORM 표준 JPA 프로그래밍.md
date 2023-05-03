@@ -2214,5 +2214,63 @@ public static void logic(EntityManager em) {
   ```
 
   - 명시적으로 join을 사용하지 않았어도 inner join이 사용된 것을 알 수 있다.
+  - team과 연관된 엔티티가 있다면 m.team.~ 로 계속 탐색이 가능하다.
+
+- 컬렉션 값 연관 경로 : 묵시적으로 내부조인이 일어난다, 계속해서 탐색할 수 없다.
   
+  - `select t.members from Team t` 가능
+  - `select t.members.username from Team t` 불가능
+    - 계속해서 탐색하고 싶다면 `select m.username from Team t join t.members m` 와 같이 명시적 조인 이후 탐색을 계속해야한다.
+  
+**특징**
+
+- 조인이 성능에 미치는 영향이 크므로 명시적 조인을 통해 유지보수성을 높이자.
+
+### Named Query : 정적쿼리
+
+- JPQL은 두 가지로 나눌 수 있다.
+  - 동적 쿼리 : `em.createQuery`처럼 JPQL을 문자로 완성해서 직접 넘기는 것을 동적 쿼리라고 한다. 런타임에 특정 조건에 따라 JPQL을 동적으로 구성할 수 있다.
+  - 정적 쿼리 : 미리 정의한 쿼리에 이름을 부여해서 필요할때 사용
+
+- 장점
+  - 애플리케이션 로딩 시점에 JPQL 문법 오류 체크 + 쿼리 파싱
+    - 애플리케이션 로딩 시점은 SessionFactory를 만드는 시점이다.
+  - 사용하는 시점에는 파싱된 쿼리를 재사용
+    - 성능 최적화에 도움이 된다.
+
+> EntityManger
+>
+> - 영속성 컨텍스트와 관련이 있다.
+> - 영속성 컨텍스트는 엔티티 객체의 집합이다.
+> - EntityManager은 영속성 컨텍스트 내에 존재하는 엔티티들을 다루기 위한 API를 제공하는 인터페이스
+
+> Persistence Unit
+>
+> - 단일 데이터베이스와 매핑되는 모든 클래스들에 대한 집합을 정의한다.
+
+- 예시
+
+  ```java
+  @NamedQuery(
+        name = "Member.findByUsername",
+        query = "select m from Member m where m.username = :username"
+  )
+  public class Member {
+      @Id @GeneratedValue
+      private Long id;
+  }
+
+  //사용
+  em.createNamedQuery("Member.findByUsername",Member.class)
+    .setParameter("username","memberA");
+  ```
+
+- `Member.findByUsername`이라고 이름 지은 이유는 NameQuery가 영속성 유닛단위로 관리되기 때문이다
+
+> @Retention
+>
+> 어노테이션이 어느 시점까지 남아있을지 결정한다
+> - SOURCE : .java 파일까지 어노테이션이 남아있고 .class로 컴파일 되는 시점엔 어노테이션 정보가 사라진다. 롬복의 getter, setter가 이에 해당한다.
+> - CLASS : .class 파일까지는 어노테이션이 남아있고 런타임 시점에는 어노테이션 정보가 사라진다. 롬복의 nonnull이 이에 해당한다. 
+> - RUNTIME : 런타임 시점까지 어노테이션이 남아있다. 런타임에 리플렉션을 통해 어노테이션 정보를 확인할 수 있다.
 
