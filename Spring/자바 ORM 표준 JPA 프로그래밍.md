@@ -2274,3 +2274,95 @@ public static void logic(EntityManager em) {
 > - CLASS : .class 파일까지는 어노테이션이 남아있고 런타임 시점에는 어노테이션 정보가 사라진다. 롬복의 nonnull이 이에 해당한다. 
 > - RUNTIME : 런타임 시점까지 어노테이션이 남아있다. 런타임에 리플렉션을 통해 어노테이션 정보를 확인할 수 있다.
 
+> QueryHint
+>
+> - JPA가 하이버네이트에게 힌트를 제공할 수 있다. JPA 공식 지원은 아니기 때문이다. 
+> - JPA에서는 동일 트랜잭션 내에서 엔티티에 대해 더티체킹을 한다. 더티 체킹을 하기 위해서는 내부적으로 엔티티 두개를 유지해야한다.
+> - 하지만 엔티티를 조회용도로만 사용하기 위해서는 하이버네이트에게 readOnly라는 힌트를 제공해서 엔티티를 내부적으로 하나만 유지하게 할 수 있다. 
+
+##  Criteria
+
+- JPQL을 코드로 관리할 수 있게 해주는 기술
+- JPQL을 직접 생성하는 것 보다 안전하다
+- 막상 사용하면 복잡하다는 단점이 있다.
+
+### 쿼리루트
+
+- 예제
+
+  [코드]
+  ```java
+  CriteriaBuilder cb = em.getCriteriaBuilder();
+  CriteriaQuery<Member> cq = cb.createQuery(Member.class);
+
+  Root<Member> m = cq.from(Member.class);
+  ```
+
+- m이 쿼리루트
+- 조회의 시작점
+- JPQL의 별칭과 같다고 이해해도 좋다.
+
+### Criteria 쿼리 생성
+
+- CriteriaBuilder를 통해서 CriteriaQuery를 생성해야한다
+  
+  `cb.createQuery(Member.class)`
+
+- 반환타입을 지정하면 `em.createQuery(cq)` 시 타입을 지정해줄 필요가 없다.
+
+### 조회
+### DISTINCT
+### 튜플
+### 집합
+### 정렬
+### 조인
+
+- join() 메서드와 JoinType 클래스를 사용한다
+  
+- 예제
+  
+  ```java
+  Root<Member> m = cq.from(Member.class);
+  Join<Member,Team> t = m.join("team",JoinType.INNER);
+
+  cq.multiselect(m,t)
+          .where(cb.equal(t.get("teamName"),"alpha"));
+  ```
+
+### 서브쿼리
+
+- 간단한 예시
+
+  ```java
+  CriteriaBuilder cb = em.getCriteriaBuilder();
+  CriteriaQuery<Member> mainQuery = cb.createQuery(Member.class);
+  Subquery<Double> subquery = mainQuery.subquery(Double.class);
+
+  Root<Member> m2 = subquery.from(Member.class);
+  subquery.select(cb.avg(m2.<Integer>get("age")));
+
+  Root<Member> m = mainQuery.from(Member.class);
+  mainQuery.select(m)
+          .where(cb.ge(m.<Integer>get("age"),subquery));
+
+  ```
+
+- 상호 관련 서브 쿼리
+
+  - 서브쿼리에서 메인쿼리의 정보를 사용하려면 메인쿼리의 별칭을 얻어 사용해야한다.
+  - `Root<Member> subM = subquery.correlate(m)` 을 통해서 메인 쿼리의 별칭을 얻을 수 있다.
+
+### 메타모델
+
+- criteria가 코드 기반의 JPQL 빌더임에도 불구하고 문자열을 사용하는 곳이 있다.
+
+  `m.get("age")`
+
+- 이런 부분들은 metamodel을 사용해서 해결할 수 있다.
+  
+  `m.get(Member_.age)`
+
+- 다양한 툴을 통해 메타모델을 생성할 수 있지만 maven 기준으로는 dependency에 `hibernate-jpamodelgen`을 추가하면 된다.
+
+  
+  

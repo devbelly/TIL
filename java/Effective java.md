@@ -518,4 +518,177 @@ optional.ifPresent(h -> {
 
     <img width="853" alt="image" src="https://user-images.githubusercontent.com/67682840/235092495-72487329-f605-42fd-832f-f02f59e48649.png">
 
+<br>
+
+# 5장, 자원을 직접 명시하지말고 의존 객체 주입을 사용하라
+
+- 정적 유틸리티 클래스나 싱글톤은 테스트하기 어렵다.
+  
+  ```java
+  public class Spellchecker{
+    private final Lexicon dictionary = ...;
+
+    public boolean isValid(String word){...}
+    public List<String> suggestions(String type) { ... }
+  }
+  ```
+
+  - 만약 언어별로 다른 사전을 필요료 한다면 어떻게 해야할까?
+    - koreanSpellChecker 객체를 생성? 테스트 하기 어렵다.
+    - 서브 클래스 생성? 유연성이 떨어진다.
+    - final을 제거하고 필요할때마다 세터를 통해 적절한 dic 세팅? 멀티쓰레드 환경에서 사용하기 어렵다.
+  - 객체를 주입받는 식으로 하자
+
+    ```java
+    public class SpellCheckeer{
+      private final Lexicon dictionary = ...;
+
+      public SpellChecker(Lexicon dictionary){
+        this.dictionary = dictionary;
+      }
+      ...
+    }
+    ```
+    - 테스트 시 `mockDictionary`를 주입을 수 있으므로 테스트하기 쉽다.
+    - 기존 SpellChecker에 있는 코드를 재사용할 수 있으므로 유연성이 증가한다.
+    - final을 통해 불변을 보장하여 멀티쓰레드 환경에서 안전하다
+  
+**29p, 이 패턴의 쓸만한 변형으로 생성자에 자원 팩터리를 넘겨주는 방식이 있다.**
+
+- 팩터리란 호출할때마다 특정 타입의 인스턴스를 리턴하는 객체를 말한다.
+- 즉, 팩터리 메서드 패턴을 구현한 것이다.
+- 팩터리 메서드 패턴?
+  - 클라이언트에서 직접 new 연산자를 통해 제품 객체를 생성하지 않는다.
+  - 객체 생성을 팩터리에 위임하여 클라이언트가 다른 객체를 생성하고 싶다면 다른 팩터리를 주입받아 사용한다.
+  - 그외 사용 예시?
+
+**29p, Supplier 인터페이스가 팩터리를 표현한 완벽한 예이다**
+
+- 팩터리 메서드는 인자 없이 리턴(Product)하기만 한다
+- 이 구조는 Supplier와 일치한다.
+
+**p29, 한정적 와일드카드 타입을 사용해 팩터리 타입의 매개변수를 제한하자**
+
+- 팩터리 메서드가 구체적인 타입을 리턴한다.
+- 만약 `Supplier<Product>` 처럼 적으면 Product의 하위타입을 사용할 수 없으므로
+- `Supplier<? extends Product>`를 통해 팩터리 메서드 패턴을 완성하자
+  - 하지만 Product가 구체적인 클래스가 아니라 인터페이스라면 굳이 사용할 필요는 없을 듯 하다.
+
+<br>
+
+# 6장, 불필요한 객체 생성을 피하자
+
+- `String str = new String("test")`
+- `String str = "test"`
+- 첫 번째 코드는 Heap에 매번 새로운 객체를 생성하고 두번째는 String Constant Pool에서 문자열을 재사용해 매번 동일한 객체를 사용함을 보장한다.
+
+- 정규표현식 예시
+
+  ```java
+  static boolean isRomanNumeral(String s){
+    return s.matches("//정규표현식");
+  }
+  ```
+  - 자바에서 생성하는 정규표현식용 Pattern은 유한 상태 머신을 내부적으로 사용해 매칭을 하기 때문에 생성 비용이 비싸다.
+  - 즉, //정규표현식 에 해당하는 부분을 private static final로 분리하자
+  - 해당 클래스가 사용되지 않는다면 불필요하게 Pattern 정규표현식이 초기화 되었다. 이를 lazy initialization으로 변경할 수도 있지만 큰 성능차이를 체감하긴 어려우므로 권장하지 않는다.
+
+- 오토박싱 예시
+  - 기본타입과 래퍼타입을 같이 사용할 때 자동으로 변환해주는 기술이다.
+  - 오토 박싱은 기본타입과 해당 기본 타입을 래핑한 타입간 경계를 허물지만 위험할 때도 있다.
+  
+**p34, 데이터베이스 연결 같은 경우 생성 비용이 워낙 비싸서 재사용하는 편이 낫다**
+
+- 애플리케이션과 데이터베이스를 연결하기 위해서 커넥션 객체를 사용한다.
+- 이러한 커넥션 객체는 생성 비용이 굉장히 비싸기 때문에 객체 풀링을 하는 것이 좋다.
+- Spring에서는 HikariCP를 통해 객체풀링을 지원한다. 덕분에 값비싼 커넥션 객체를 매번 재생성 하지 않아도 된다.
+
+**가비지 컬렉션**
+
+- JVM에서 참조되고 있지 않은 객체를 메모리에서 해제하는 기술
+- 과정
+  - 모든 참조변수들을 확인하여 마킹한다. MARK
+  - 마킹되지 않은 객체들을 제거한다. SWEEP
+  - 비어있는 메모리 공간을 압축한다. COMPACT
+- 시점
+  - Heap을 Young generation, Old Generation으로 나눌 수 있다.
+  - Young Generation은 eden, s0, s1로 나눌 수 있다.
+  - 처음에 eden에 객체가 생성. eden이 전부 차게 되면 s0으로 이동
+  - 과정 반복해서 s0에 객체가 다 쌓이면 s1으로 이동
+  - 특정 age가 넘게 되면 Old Generation으로 이동한다
+- 고려해야할 포인트
+  - Throughtput
+  - Latency
+  - Footprint
+- Stop the world
+  - JVM이 GC를 위해 애플리케이션 스레드를 중지하고 GC 관련 쓰레드만 동작 시키는 것
+  - latency에 영향을 끼친다
+- 종류
+  - serial GC
+  - parallel GC (java8)
+  - CMS GC (deprecated)
+  - G1 GC
+  - ZGC
+
+<br>
+
+# 7장, 다 쓴 객체 참조를 해제하라
+
+- 예시
+
+  ```java
+  public Object pop() {
+    if(size == 0){
+      throw new EmptyStackException();
+    }
+    return element[--size];
+  }
+  ```  
+
+  - 스택이 커졌다가 줄어들 때 스택에서 꺼내진 객체들을 가비지 컬렉터가 제거하지 못한다.
+  - 객체의 참조를 살려두면 해당 객체가 참조하고 있는 다른 객체들 또한 제거하지 못한다.
+    (가비지컬렉션 과정 중 Mark는 객체 그래프를 탐색해서 모든 객체들을 마킹)
+  - 올바르게 구현하려면 null을 명시적으로 표시해주면 된다.
+- 예시
+
+  ```java
+  public Object pop() {
+    if(size == 0){
+      throw new EmptyStackException();
+    }
+    element[size]=null;
+    return element[--size];
+  }
+  ```  
+  - 이렇게 일일이 null처리를 하면 프로그램을 필요이상으로 번잡하게 만든다.
+  - 가장 올바른 방법은 참조변수를 유효범위 밖으로 밀어내는 것
+
+
+
+
+**p38, 객체 참조를 null 처리하는 일은 예외적인 경우여야한다**
+**p38, 캐시 역시 메모리 누수를 일으키는 주범이다**
+
+
+ 
+**p38, WeakHashMap**
+
+- 레퍼런스 종류
+
+  - Strong Reference
+    - new 연산을 통해서 객체를 생성하는 것
+    - GC의 대상이 아니다
+    - 참조변수에 명시적으로 null을 설정하면 GC의 대상이 된다
+
+  - Soft Reference
+    - 생성하기 위해서는 생성자에 Strong ref를 넣어주면 된다.
+    - 예시
+      
+      ```java
+      //SoftReference는
+      Object strongRef = new Object();
+      SoftReference<Object> soft = new SoftReference<>(strongRef);
+      ```
+
+- 더이상 사용하지 않는 객체를 GC할때 자동으로 삭제해주는 Map
 
