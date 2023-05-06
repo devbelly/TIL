@@ -663,13 +663,13 @@ optional.ifPresent(h -> {
   - 이렇게 일일이 null처리를 하면 프로그램을 필요이상으로 번잡하게 만든다.
   - 가장 올바른 방법은 참조변수를 유효범위 밖으로 밀어내는 것
 
-
-
-
 **p38, 객체 참조를 null 처리하는 일은 예외적인 경우여야한다**
+
 **p38, 캐시 역시 메모리 누수를 일으키는 주범이다**
 
-
+  - 캐시를 활용하기 위해 Map을 사용한다.
+  - 캐시 외부에서 Key를 참조하는 동안만 엔트리가 필요하다면 WeakHashMap을 사용하자.
+  - Map의 Key는 래퍼타입이 오는데 primitive의 레퍼타입은 null로 처리하더라도 JVM 내부에 캐싱이 되어있어 WeakHashMap을 사용하더라도 삭제되지 않는다.
  
 **p38, WeakHashMap**
 
@@ -685,10 +685,80 @@ optional.ifPresent(h -> {
     - 예시
       
       ```java
-      //SoftReference는
+      //SoftReference는 JAVA에서 지원한다.
       Object strongRef = new Object();
       SoftReference<Object> soft = new SoftReference<>(strongRef);
-      ```
 
+      strongRef = null;
+
+      System.gc();
+      System.out.println(soft.get())  //제거되지 않는다, 메모리 충분
+      ```
+    - Object를 가리키는 strongRef가 사라졌을 때 GC의 대상이 된다
+    - 단 메모리가 부족한 상황에서만 실제로 제거된다
+
+  - Weak Reference
+    - Soft와 전체적으로 생성하는 과정이 비슷하다
+    - 예시
+      
+      ```java
+      //WeakReference는 JAVA에서 지원한다.
+      Object strongRef = new Object();
+      WeakReference<Object> weak = new WeakReference<>(strongRef);
+
+      strongRef = null;
+
+      System.gc(); 
+      System.out.println(weak.get()) // Weak 이므로 제거된다.
+      ```
+  - Phantom Reference
+    - 객체가 Phantom Reachable 한 경우 객체 제거 + 생성자에서 사용한 큐에 레퍼런스를 넣어준다
+    - 이후 큐에서 꺼내 삭제 작업을 진행할 수 있다.
+    - finalize를 대신하는 자원정리용도, 객체들이 메모리 해제가 되는지 파악할 수 있다.
 - 더이상 사용하지 않는 객체를 GC할때 자동으로 삭제해주는 Map
 
+**ScheduledThreadPoolExecutor**
+
+- 쓰레드를 실행하는 방법은 다음과 같다.
+  
+  ```java
+  CustomRunnable task = new CustomRunnable();
+  Thread thread = new Thread(task);
+  thread.start();
+  ```
+  - Runnable, Thread 문제점
+    - 저수준 API에 의존한다
+    - 쓰레드의 반환값을 얻을 수 없다.
+    - 매번 쓰레드를 생성 및 종료하는 오버헤드가 크다.
+
+- 쓰레드의 반환값을 얻기 위해 `Callable`이 등장했다.
+  - 코드
+
+    ```java
+    @FunctionalInterface
+    public interface Callable<V> {
+        V call() throws Exception;
+    }
+    ```
+
+- `Callable`의 비동기 실행을 돕기 위해 `Future`이 등장했다.
+  - 코드
+
+    ```java
+    // hello는 Callable 객체이다.
+    // Future에서 제공하는 isDone, get, cancel로 task를 통제할 수 있다.
+    Future<String> helloFuture = executorService.submit(hello);
+    ```
+- 매번 쓰레드를 생성하는 부담을 덜기 위해 쓰레드풀 개념이 JAVA5 부터 도입되었다.
+  - Executor 인터페이스
+    - 쓰레드풀 구현을 위한 인터페이스
+    - 작업의 실행을 책임진다
+    - 코드
+      <img width="698" alt="image" src="https://user-images.githubusercontent.com/67682840/236634450-91c85fb5-3dd9-4041-bdd6-eec63b0f4e23.png">
+  - ExecutorSerivce 인터페이스
+    - 작업의 등록을 책임진다.
+    - Executor를 상속받았기 때문에 작업의 등록 및 실행을 책임지게 된다.
+  - 쓰레드풀 생성 시 고려해야할 점
+    - I/O
+    - CPU
+  
