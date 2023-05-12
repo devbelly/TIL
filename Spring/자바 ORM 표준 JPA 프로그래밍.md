@@ -2365,4 +2365,131 @@ public static void logic(EntityManager em) {
 - 다양한 툴을 통해 메타모델을 생성할 수 있지만 maven 기준으로는 dependency에 `hibernate-jpamodelgen`을 추가하면 된다.
 
   
+## QueryDSL
+
+- Criteria보다 설정이 간편하다
+- Criteria에서 CriteriaQuery 객체를 만든 것처럼 QueryDSL에서도 JPAQuery를 만들어야한다
+- 예제
+
+  ```java
+  EntityManager em = emf.createEntityManager();
   
+  JPAQuery query = new JPAQuery(em);
+  QMember qmember = new QMember("m");
+
+  List<Member> members = query
+    .from(qmember)
+    .where(qmember.username.eq("test"))
+    .list(qmember);
+  
+  ```
+- `QMember` 클래스에서 제공하는 기본적인 쿼리타입이 있다.
+
+  <img width="606" alt="image" src="https://github.com/devbelly/dailycard-server/assets/67682840/681e555f-b06e-474d-90c8-25a1cbea3107">
+
+  - 쿼리 타입에서 variable은 JPQL내에서 별칭으로 사용된다.
+  - 위 이유로 같은 엔티티를 조인하거나 서브쿼리를 사용하면 같은 별칭이 사용되므로 직접 지정해서 사용하는 것이 좋다.
+
+### 결과조회
+
+- uniqueResult : 단건 조회, 검색 결과가 없으면 null, 여러개면 예외발생
+- singleResult : uniqueResult와 같지만 여러개면 맨 첫번째 결과 리턴
+- list : 리스트를 반환, 없다면 비어있는 리스트 반환.
+- listResults : 페이징에 사용된다
+  - `SearchResult<?>` 를 반환한다
+  - 전체 데이터 갯수를 확인하기 위한 쿼리가 추가적으로 나간다.
+
+### 프로젝션
+
+- select절에 조회대상을 지정하는 것을 프로젝션이라고 한다
+- JDSL과는 다르게 마지막 결과조회를 하는 쪽에서 프로젝션 대상을 지정해준다
+- 프로젝션 대상이 하나면 해당 타입으로 변환된다.
+
+  ```java
+  JPAQuery query = new JPAQuery(em);
+  QMember qMember = new QMember("m");
+  List<String> results = query
+          .from(qMember)
+          .list(qMember.username);
+  ```
+
+- 프로젝션 대상이 여러개면 Tuple을 사용한다.
+
+  ```java
+  JPAQuery query = new JPAQuery(em);
+  QMember qMember = new QMember("m");
+  List<Tuple> results = query
+          .from(qMember)
+          .list(qMember.username,qMember.id);
+
+  for (Tuple tp : results){
+      System.out.println(tp.get(qMember.id));
+      System.out.println(tp.get(qMember.username));
+  }
+  ```
+
+### 수정, 삭제 배치쿼리
+
+- QueryDsl은 배치쿼리도 지원한다. 영속성 컨텍스트를 무시하고 바로 데이터베이스에 요청을 날리므로 주의하자.
+
+
+### 네이티브 SQL
+
+- 어떠한 이유로 JPQL을 사용할 수 없는 경우 JPA는 직접 쿼리를 작성할 수 있는 방법들을 열어두었다.
+- 네이티브 SQL을 사용하면 엔티티를 조회할 수 있고 JPA가 지원하는 영속성 컨텍스트를 사용할수 있다.
+
+**엔티티 조회**
+
+- `em.createNativeQuery(sql, Member.class)`, JPQL처럼 클래스명을 명시하면 된다.
+
+### 벌크연산
+
+- 단건 업데이트는 더티체킹, 단건 삭제는 `em.remove()`를 사용하면 된다.
+- 하지만 여러 건에 대해 적용하기 위해서는 벌크 연산을 해야한다
+- 단, 벌크연산은 영속성 컨텍스트를 무시하고 바로 데이터베이스에 쿼리를 날리므로 주의해야한다
+- 벌크연산은 `executeUpdate` 메서드를 사용한다.
+- 예시
+
+  ```java
+  Member findMember = em.createQuery("select m from Member m where m.age = 40",Member.class).getSingleResult();
+  
+  System.out.println(findMember.getAge());
+
+  em.createQuery("update Member m set m.age = m.age + 100").executeUpdate();
+
+  System.out.println("벌크연산 직후 나이");
+  System.out.println(findMember.getAge());
+  ```
+
+  출력결과
+  ```
+  40
+  벌크연산 직후 나이
+  40
+  ```
+
+**해결책**
+
+- `em.refresh(findMember)`
+  - select 쿼리가 한번 더 나가게 된다.
+- 벌크연산 후 영속성 컨텍스트 초기화
+  - 벌크연산은 영속성 컨텍스트와 2차캐시를 무시하므로 주의해서 사용하자.
+
+### 영속성 컨텍스트와 JPQL
+
+- JPQL의 조회대상은 엔티티, 임베디드 타입, 값 타입
+- 조회대상이 엔티티라면 영속성 컨텍스트로 관리되지만 임베디드 타입, 값 타입은 영속성 컨텍스트로 관리되지 않는다.
+
+### JPQL로 조회한 엔티티와 영속성 컨텍스트
+
+- JPQL은 영속성 컨텍스트의 존재유무와 상관없이 일단 데이터베이스에 쿼리를 날린다.
+- JPQL로 조회한 결과가 영속성 컨텍스트에 존재할 경우, 데이터베이스에서 조회해온 결과를 버린다.
+  - 데이터베이스에서 조회해온 결과를 사용하면 영속성 컨텍스트에 더티체킹이 꼬일 수 있다.
+- 즉, 영속성 컨텍스트에 있는 엔티티를 벌크연산 후 JPQL로 결과를 조회하려고 하면 원래 결과와 달라진다.
+
+### JPQL과 플러시 모드
+
+- 플러시는 변경내역을 데이터베이스에 반영하는 과정
+- 기본 옵션은 AUTO, 이는 커밋과 쿼리시 플러시하는 옵션
+- 다른 옵션으로는 COMMIT이 있다. 최적화시 사용하는데 조심해서 사용해야한다.
+- `em.flushMode()`처럼 엔티티 매니저에 플러시 모드를 설정할 수도 있고 `em.createQuery().setFlushMode()` 처럼 쿼리에 플러시 모드를 설정할 수도 있다. 쿼리에 설정하는 것이 우선권을 갖는다.
