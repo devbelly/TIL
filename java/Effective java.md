@@ -762,3 +762,270 @@ optional.ifPresent(h -> {
     - I/O
     - CPU
   
+<br>
+
+# 8장, finalizer와 cleaner 사용을 피하라
+
+- 객체를 생성한 후 리소스를 정리하지 않은 채 객체를 소멸하면 문제가 발생할 수 있다.
+- 위 대안으로 finalizer와 cleaner가 등장했으나 둘의 사용을 권하진 않는다.
+  
+## finalizer
+
+- 사용하기 위해선 Object 클래스에 있는 `finalize` 메서드를 override 하면 된다.
+
+  ![image](https://github.com/devbelly/dailycard-server/assets/67682840/57a9753f-715b-4e31-9c13-62456f190581)
+
+- 객체에 대한 참조가 없다고 판단되면 가비지 컬렉터가 `finalize` 메서드를 호출한다
+
+  ```java
+  public class FinalizerIsBad {
+    @Override
+    protected void finalize() throws Throwable {
+        System.out.println("");
+    }
+
+    public static void main(String[] args) {
+        while(true){
+            new FinalizerIsBad();
+        }
+    }
+  }
+  ```
+
+- GC의 대상이 되면 Finalizer에서 관리하는 큐에 객체가 들어가게 된다.
+
+  <img width="724" alt="image" src="https://github.com/devbelly/dailycard-server/assets/67682840/815c8ec3-69fe-4960-b513-e73ecf561c69">
+
+- 리플렉션으로 큐의 크기를 확인해보면 참조되지 않는 객체들이 즉각적으로 제거되는 것이 아니라 쌓여있는 것을 확인할 수 있다.
+  - 이 원인으로는 finalizer가 실행되는 쓰레드가 다른 쓰레드에 비해 우선순위가 낮기 때문이다.
+
+- finalizer가 즉시 수행된다는 보장이 없다는 것을 확인할 수 있다.
+  
+
+## Cleaner
+
+- finalizer의 대안으로 cleaner를 사용할 수 있다.
+- 내부적으로 PhantomReference로 구현되어있다. 
+- 코드
+  
+  ```java
+  public class Room implements AutoCloseable {
+    private static final Cleaner cleaner = Cleaner.create();
+
+    // 청소가 필요한 자원. 절대 Room을 참조해서는 안 된다!
+    private static class State implements Runnable {
+        int numJunkPiles; // Number of junk piles in this room
+
+        State(int numJunkPiles) {
+            this.numJunkPiles = numJunkPiles;
+        }
+
+        // close 메서드나 cleaner가 호출한다.
+        @Override public void run() {
+            System.out.println("Cleaning room");
+            numJunkPiles = 0;
+        }
+    }
+
+    // 방의 상태. cleanable과 공유한다.
+    private final State state;
+
+    // cleanable 객체. 수거 대상이 되면 방을 청소한다.
+    private final Cleaner.Cleanable cleanable;
+
+    public Room(int numJunkPiles) {
+        state = new State(numJunkPiles);
+        cleanable = cleaner.register(this, state);
+    }
+
+    @Override public void close() {
+        cleanable.clean();
+    }
+  }
+  ```
+
+  - finalizer와 cleaner의 역할은 안전망 역할이다. Autoclosable을 구현했을지라도 클라이언트가 try-with-resource를 사용하지 않은 경우, gc될 수 있는 기회를 제공하기 위함이다.
+    - 즉, 똑똑한 클라이언트가 try-with-resource를 사용했으면 close 메서드를 통해 clean이 호출되고
+    - 멍청한 클라이언트가 구현을 깜박했다면 Room 생성시 cleaner에 register 했으므로 gc를 통해 정리될 기회를 갖게된다.
+  - Runnable을 통해 자원 정리 방법을 정의한다.
+  - `Cleaner.create()` 이후 `cleaner.register()`을 통해 GC시 할 Task를 알려준다
+  - Room이 제거될 때 호출되므로 inner class 구현시 Room을 참조해선 안된다.
+
+**p45, 정적이 아닌 중첩클래스는 자동으로 바깥 객체의 참조를 갖기 때문이다**
+
+- 코드
+
+  ```java
+  public class OuterClass {
+    class InnerClass {
+
+    }
+
+    public static void main(String[] args) {
+        OuterClass outerClass = new OuterClass();
+        InnerClass innerClass = outerClass.new InnerClass();
+
+        System.out.println(innerClass);
+
+        outerClass.printFiled();
+    }
+
+    private void printFiled() {
+        Field[] declaredFields = InnerClass.class.getDeclaredFields();
+        for(Field field : declaredFields) {
+            System.out.println("field type:" + field.getType());
+            System.out.println("field name:" + field.getName());
+        }
+    }
+  }
+  ```
+
+  실행결과
+
+  ```
+  field type:OuterClass
+  field name:this$0
+  ```
+
+  - inner 클래스에 어떠한 필드도 선언하지 않았지만 외부 클래스에 대한 참조가 있음을 알 수 있다.
+  - OuterClass를 제거해야하는데 OuterClass를 참조하면 오류가 발생하므로 static을 사용해서 OuterClass에 대한 참조를 갖지 않도록 하자
+
+<br>
+
+- cleaner 역시 바로 실행된다는 보장이 없으므로 파일 닫기에 사용해선 안된다.
+  - 시스템이 동시에 열 수 있는 파일 갯수에는 한계가 있기 때문이다.
+  - 즉각적으로 닫지 않으면 예외가 발생할 수 있다.
+
+- finalizer와 cleaner로 객체를 제거하면 AutoClosable을 사용한 것보다 더 느리다.
+
+**p42, Finalizer 공격**
+
+- 생성자나 직렬화 과정에서 예외가 발생하면 생성되다만 객체에서 finalizer가 수행될 수 있다.
+
+  예시
+
+  ```java
+  public class Normal{
+    private String name;
+    public Normal(String name){
+      if(name=="bad"){
+        throw new IllegalArgumentException();
+      }
+    }
+    public void func(){
+      // something..
+    }
+  }
+  ```
+
+  ```java
+  public class BadClass extends Normal{
+    ...
+
+    @Override
+    protected void finalize() throws Throwable {
+        this.func();
+    }
+  }
+  ```
+
+- BadClass 객체 생성 시 "bad"를 파라미터로 넘겨주면 예외가 발생할 것이다.
+- 생성되다만 BadClass 객체는 gc시 finalize를 호출하는데, 이때 "bad"에게 허용되지 않는 `func()` 또한 호출한다.
+- final 클래스가 아니라면 아무일도하지 않는 finalize final 메서드를 정의해서 오버라이딩을 막으면 된다.
+
+<br>
+
+# 9장, try-finally보다 try-with-resource를 사용하라
+
+- 자바 라이브러리에는 close 메서드를 호출해 직접 닫아줘야 하는 지원이 많다
+  - InputStream, OutputStream, Connection
+
+- try-finally 방식에서 여러 자원을 사용한다면?
+
+  <img width="515" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/7d8eafd4-4c9f-4393-9960-0c8f523ea764">
+
+  - 복잡하다
+  - 테스트하기 어렵다
+  - try와 finally 두 군데서 예외가 발생하면 예외 추적이 어렵다.
+    - try-finally는 finally에서 발생한 예외만 보여주지만
+    - try-with-resource는 두 예외 다 출력해준다
+
+- 위 문제들은 try-with-finally을 통해 해결가능하다
+
+  - 사용하기 위해서는 AutoClosable을 구현해야한다.
+  - 코드
+
+    ```java
+    static void copy(String src, String dst) throws IOException{
+      try(InputStream in = new FileInputStream(src);
+          OutputStream out = new FileOutputStream(dst)){
+          byte[] buf = new byte[128];
+          int n;
+          while((n=in.read(buf))>=0)
+              out.write(buf,0,n);
+      }
+    }
+    ```
+
+  - 참고로 try-with-resource는 var를 사용하기에 적절하다
+
+    ```java
+    static void copy(String src, String dst) throws IOException{
+        try(var in = new FileInputStream(src);
+            var out = new FileOutputStream(dst)){
+            byte[] buf = new byte[128];
+            int n;
+            while((n=in.read(buf))>=0)
+                out.write(buf,0,n);
+        }
+    }
+    ```
+
+<br>
+
+# 10장, equals는 일반 규약을 지켜 재정의하라
+
+- 재정의하지 않아도 되는 경우는 다음과 같다
+  - 각 인스턴스가 본질적으로 고유하다
+    - 싱글톤 클래스, Enum 및 상태를 나타내지 않고 동작을 나타내는 클래스
+  - 상위 클래스에서 재정의한 equals가 하위클래스에도 딱 맞을 때
+    - List, Set..
+
+- 반대로 재정의해야하는 경우는 위 상황과 정 반대라고 생각하면 된다
+  - 논리적 동치성을 확인해야하고
+  - 상태, 값을 나타내는 클래스이며
+  - 상위 클래스에서 재정의 되지 않았을 때
+  - @Entity
+
+- 여러 클래스에서 equals는 동치관계를 만족한다고 가정하므로 아래 규약을 지켜야한다
+  - 반사성
+  - 대칭성
+  - 추이성
+  - 일관성
+  - null-아님
+
+- intellij 자동생성 코드
+
+  ```java
+  @Override
+  public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      Child child = (Child) o;
+      return Objects.equals(id, child.id) && Objects.equals(member, child.member);
+  }
+  ```
+
+  - `if(this==0) return true` : 반사성, 객체는 자기자신과 같아야한다
+  - `if(o == null) return false` : null-아님을 만족한다
+
+    - 메서드 오버라이딩을 위해 매개변수로 Object 클래스를 사용
+    - 즉, 타입변환 전에 instanceof로 검사하는 과정이 필요, 이는 묵시적으로 null 검사를 해주므로 instanceof 코드를 활용하는 것이 적절하다
+
+  - `getClass() != o.getClass()` : 리스코프 치환원칙을 위배하는 코드이다.
+
+- 대칭성
+  
+  <img width="448" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/6ece8263-e8c0-4c48-956a-670e34b7f633">
+
+  - String을 설계할 때 당연히 CaseInsensitiveString을 고려해서 설계하지 않으므로 대칭성을 만족하지 않는 구현이다.
