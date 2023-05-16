@@ -1218,7 +1218,7 @@ public static void logic(EntityManager em) {
   - JOIN을 사용하지 않아 성능이 뛰어나다
   - 쿼리가 단순하다
 - 단점
-  - 자식 엔티티가 사용하용하는 필드는 nullable 해야한다.
+  - 자식 엔티티가 사용하는 필드는 nullable 해야한다.
   - 단일 테이블에 모두 저장하므로 테이블이 커질 수 있다. 조회 성능이 오히려 느려질 수 있다.
 
     <img width="626" alt="image" src="https://user-images.githubusercontent.com/67682840/233818829-c3f7df77-664b-434e-8782-824c251e6d8b.png">
@@ -2493,3 +2493,133 @@ public static void logic(EntityManager em) {
 - 기본 옵션은 AUTO, 이는 커밋과 쿼리시 플러시하는 옵션
 - 다른 옵션으로는 COMMIT이 있다. 최적화시 사용하는데 조심해서 사용해야한다.
 - `em.flushMode()`처럼 엔티티 매니저에 플러시 모드를 설정할 수도 있고 `em.createQuery().setFlushMode()` 처럼 쿼리에 플러시 모드를 설정할 수도 있다. 쿼리에 설정하는 것이 우선권을 갖는다.
+
+<br>
+
+# 11장, 웹 애플리케이션 제작
+
+**PersistenceContext**
+
+- 순수 자바환경에서는 EntityMangerFactory에서 EntityManager를 생성
+- 스프링과 같은 컨테이너 환경에서는 `@PersistenceContext`를 통해 컨테이너에서 관리되는 EntityManager를 사용할 수 있다.
+
+**Transactional**
+
+- 서비스 계층에서 사용되면 로직 시작 시 트랜잭션을 열고 끝날때 커밋한다
+- 테스트에서 사용되면 로직 종료 시 데이터베이스에 있는 내용들이 롤백된다
+
+<br>
+
+# 12장, spring data jpa
+
+- 기능 개발을 하다보면 반복적으로 이루어지는 CRUD가 있다.
+- JpaRepository에서 CRUD를 위한 메서드를 제공한다.
+- 코드
+
+  ```java
+  public MemberRepository extends JpaRepository<Member,Long>{
+    Member findByUsername(String username);
+  }
+  ```
+
+- 스프링 데이터 JPA는 메소드 명을 기반으로 JPQL을 생성해준다.
+
+  ```java
+  select m from Member m where username = :username
+  ```
+
+- JpaRepository가 제공하는 기능들을 살펴보자
+  - `save(S)` : 새로운 엔티티는 저장하고 이미 있는 엔티티는 수정한다.
+  - `delete(T)` : 엔티티 하나를 삭제한다. 내부적으로 EntityManager.delete() 호출
+  - `findOne(Id)` : 엔티티 하나를 조회한다. 내부적으로 EntityManager.find() 호출
+  - `getOne(ID)` : 엔티티를 프록시로 조회한다. 내부에서 EntityManager.getReference() 호출
+
+## 쿼리 메서드 기능
+
+- 스프링 데이터 JPA는 메서드 이름만으로 쿼리를 생성하는 기능, JPQL을 생성한다
+- 앞서 살펴봤듯이 JPQL의 종류에 정적쿼리와 동적쿼리가 있었다.
+- 쿼리 메서드도 세가지 기능이 있다.
+  - 메소드 이름으로 쿼리 생성
+  - 메소드 이름으로 JPA NamedQuery 호출
+  - `@Query` 어노테이션을 사용해서 레포지토리에 직접 정의
+
+### 메소드 이름으로 쿼리 생성
+
+- 유저의 이름과 나이만으로 검색하는 예제
+
+  ```java
+  public interface MemberRepository extends JpaRepository<Member,Long>{
+    Member findByUsernameAndAge(String username, Long age);
+  }
+  ```
+  ```
+  select m from Member m where m.username = ?1 and m.age = ?2
+  ```
+
+### JPA NamedQuery
+
+- NamedQuery란 정적쿼리
+- 말 그대로 쿼리에 이름을 붙여서 사용하는 방법
+- 생성하기 위해서는 `@NamedQuery` 어노테이션이나 xml을 정의하는 방법이 있다.
+- 코드
+
+  ```java
+  @Entity
+  @NamedQuery(
+    name = "Member.findByUsername",
+    query = "select m from Member m where m.username = :username")
+  public class Member{
+    ...
+  }   
+  ```
+
+  ```java
+  // JPA에서 호출
+  em.createNamedQuery("Member.findByUsername",Member.class)
+    .setParameter("username",회원1)
+    .getResultList();
+  ```
+
+  ```java
+  // Spring data jpa에서 호출
+  public interface MemberRepository extends JpaRepository<Member,Long>{
+    List<Member> findByUsername(@Param String username)
+  }
+  ```
+
+  - 엔티티명.메서드명 으로 NamedQuery가 있는지 확인한다
+  - 없다면 런타임에 JPQL을 생성한다.
+
+### @Query, 리포지토리 메서드에 쿼리 정의
+
+- 이름 없는 NamedQuery 방식
+- NamedQuery와 마찬가지로 실행시점에 문법오류를 발견할 수 있는 장점이 있다.
+- 코드
+
+  ```java
+  @Query("select m from Member m where m.username = :username")
+  Member findByUsername(@Param String username);
+  ```
+
+### 벌크연산
+
+- JPA에서는 `em.createQuery("...").executeUpdate()`를 사용했다.
+- Spring Data Jpa에서는 `@Modifying`을 사용한다.
+- 코드
+
+  ```java
+  @Modifying
+  @Query("update Product p set p.price = p.price * 1.1 where p.stockAmount < :stockAmount")
+  int bulkPriceUp(@Param("stockAmount") Long amount);
+  ```
+
+- 벌크연산 이후 영속성 컨텍스트를 초기화하고 싶다면 `clearAutomatically = true`를 사용할 수 있다. 기본값은 false
+
+### 반환 타입
+
+- 여러건 조회, 반환 결과 없다면 빈 컬렉션
+- 단건 조회, 반환 결과가 없다면 null
+  - 단건 조회시 Spring Data Jpa는 내부적으로 `.getSingleResult()`를 사용
+  - 반환되는 결과가 없다면 `NoResultException` 예외가 발생하지만 개발자입장에선 다루기가 어렵기 때문에 Spring Data Jpa에서는 null로 반환된다. 
+
+551
