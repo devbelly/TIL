@@ -2622,4 +2622,65 @@ public static void logic(EntityManager em) {
   - 단건 조회시 Spring Data Jpa는 내부적으로 `.getSingleResult()`를 사용
   - 반환되는 결과가 없다면 `NoResultException` 예외가 발생하지만 개발자입장에선 다루기가 어렵기 때문에 Spring Data Jpa에서는 null로 반환된다. 
 
-551
+### 페이징과 정렬
+
+- 페이징과 정렬을 위해 쿼리 메서드에 Sort와 Pageable 파라미터를 추가적으로 넣을 수 있다.
+
+  ```java
+  List<Member> findByNameStartingWith(String name, Pageable pageable);
+  ```
+
+- Pageable 파라미터를 사용할 경우, 반환값으로 `Page<Member>` 또는 `List<Member>`를 사용할 수 있다.
+  - `Page<Member>`를 반환값으로 사용한다면 전체 데이터 파악을 위해 count 쿼리가 발생한다.
+
+### 명세
+
+- DDD에서 Specification 개념이 도입되었다.
+- 스프링 데이터 JPA는 Jpa Criteria를 통해 제공
+- Predicate는 참, 거짓으로 평가되는 술어. 검색조건이 하나의 Predicate일 수 있다.
+- Composite Pattern으로 구현되어서 여러개의 Specification을 사용할 수 있다.
+- Specifications 클래스는 Specification을 연결할 수 있도록 도와주는 클래스
+  - and, or, not 등을 제공한다.
+- Specifiation 구현체는 인자로 제공되는 CriteriaBuilder, root 등을 활용해서 적절한 Predicate를 생성하면 된다.
+
+> Specifications
+>
+> - Specification을 체이닝 할 수 있도록 도와준다.
+> - 특이한 점은 생성자를 private으로 막고 static 생성자를 사용하는데, static 생성자는 where이다. 순서를 강제할 때도 static 생성자를 사용할 수 있다.
+>
+
+### 도메인 클래스 컨버터 기능
+
+- 컨트롤러에서 사용자 아이디가 넘어온다면 회원 객체를 찾기 위해 Repository를 활용할 것이다.
+- 도메인 클래스 컨버터 기능을 활용한다면 자동으로 객체와 연관된 레포지토리에서 찾아서 객체 매개변수와 매핑을 해준다.
+
+  <img width="609" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/e2adf942-715b-454e-8353-91d668c08d65">
+
+### SimpleJpaRepository
+
+- 스프링 데이터 Jpa에서 제공하는 인터페이스는 SimpleJpaRepository가 구현한다.
+
+- `@Repository` : Jpa가 던지는 예외를 스프링 예외로 변환한다
+
+  - 서비스 계층이 데이터 접근 기술(Jpa)에 의존적인 것은 좋지 않다.
+  - 스프링은 이 문제를 해결하기 위해 AOP를 사용하고 스프링 예외로 변환한다.
+
+- `@Transaction(readOnly = true)`
+
+  - 기본적으로 모든 메서드에 트랜잭션이 적용되어있다.
+  - 데이터를 조회하는 메서드에 readOnly 옵션이 적용되어있는데 트랜잭션 종료시점에 플러시를 하지 않아 약간의 성능 향상을 얻을 수 있다.
+
+<br>
+
+# 13장, 웹 애플리케이션과 영속성 관리
+
+## 트랜잭션 범위의 영속성 컨텍스트
+
+- 순수 자바 애플리케이션은 트랜잭션과 영속성 컨텍스트 관리를 직접해야한다
+- 스프링에서 JPA를 사용하면 스프링이 제공하는 전략에 따라 트랜잭션과 엔티티매니저를 사용한다.
+- 스프링이 기본적으로 제공하는 전략은 **트랜잭션 범위의 영속성 컨텍스트**
+  - 트랜잭션과 영속성 컨텍스트의 범위가 일치한다.
+  - 트랜잭션을 시작하면 영속성 컨텍스트를 생성하고 종료되면 영속성 컨텍스트도 종료된다.
+  - 같은 트랜잭션은 같은 영속성 컨텍스트에 접근한다.
+
+579
