@@ -1029,3 +1029,58 @@ optional.ifPresent(h -> {
   <img width="448" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/6ece8263-e8c0-4c48-956a-670e34b7f633">
 
   - String을 설계할 때 당연히 CaseInsensitiveString을 고려해서 설계하지 않으므로 대칭성을 만족하지 않는 구현이다.
+
+<br> 
+
+# 11장, equals를 재정의하려거든 hashCode도 재정의하라
+
+- equals를 재정의했다면 hashCode도 재정의해야한다
+  - lombok에서 `@EqualsAndHashCode`를 지원한다.
+- 규약은 다음과 같다.
+  - equals가 같다고 판단한 두 객체는 hash code가 일치해야한다.
+    - 만약 `Object.hashcode()`를 그대로 사용하면 다른 객체에 대해선 다른 해시값이 나온다.
+    - 동치인 두 객체가 다른 해시값을 리턴하면 해시 기반의 컬렉션에 문제가 발생한다
+  - equals가 다르다고 판단한 두 객체는 hash code가 일치해도 상관은 없으나 달라야한다
+- 해시 값을 계산할 때 파생 필드를 제외한 핵심 필드만으로 해시값을 계산해야한다.
+  - JPA에서 동치는 id값으로 계산한다.
+  - 엔티티의 hashcode를 override한다면 어떤식으로 구현해야할까?
+
+## 쓰레드 안정성
+
+- lazy initialization을 한다면 쓰레드 안정성에 주의하자.
+
+  ```java
+  private int hashCode;
+
+  @Override public int hashCode(){
+    //logic
+  }
+  ```
+
+- 방법1
+
+  ```java
+  private volatile int hashCode;
+
+  @Override public int hashCode(){
+    if(this.hashCode!=0){
+      return hashCode;
+    }
+    //logic 공유자원과 관련없음
+    synchronized(this){
+      //logic 공유자원과 관련있음
+    }
+  }
+  ```
+
+  - critical section의 길이를 줄일 수 있다.
+  - synchronized만 사용하면 다른 쓰레드가 캐시에 저장된 이상한 값을 읽어올 수 있다.
+  - 이를 방지하기 위해 volatile 키워드 추가. 메인 메모리에서 값을 읽고 쓰는 것을 보장한다.
+
+- 방법2, ThreadLocal 사용
+
+  - 스프링에서는 트랜잭션 사용 시 ThreadLocal을 사용한다.(Connection 객체..)
+
+- 방법3, hashCode를 사용하지 않고 클래스 모든 속성이 불변일 경우(final)
+
+
