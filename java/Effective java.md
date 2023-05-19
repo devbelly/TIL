@@ -1083,4 +1083,26 @@ optional.ifPresent(h -> {
 
 - 방법3, hashCode를 사용하지 않고 클래스 모든 속성이 불변일 경우(final)
 
+<br>
 
+# 13장, clone 재정의는 주의해서 진행하라
+
+- Cloneable은 복제해도 되는 클래스임을 명시하는 믹스인 인터페이스
+- 실무에서 Cloneable을 구현한 클래스는 clone 메서드를 퍼블릭으로 제공한다
+  - protected면 하위 클래스에서만 clone이 호출가능하므로 이상하다
+- clone을 재정의 하는 곳에 생성자를 사용하면 안된다. 
+  - `super.clone()`은 사용하는 위치에 따라 반환되는 객체의 타입이 다르기 때문이다.
+  - 만약 생성자 방식으로 clone을 구현했다면 하위 클래스에서 문제가 발생할 것이다.
+- 코드
+
+  ```java
+  @Override public PhoneNumber clone(){
+    try{
+      return (PhoneNumber) super.clone();
+    } catch(CloneNotSupportedException e){
+      throw new AssertionError();
+    }
+  }
+  ```
+- java는 오버라이딩하는 메서드에서 하위타입을 리턴해도 오버라이딩으로 인정한다.
+  - ex) Object를 리턴하는 대신 PhoneNumber를 리턴하는 것도 인정해준다.  클라이언트에서는 clone이후에 형변환을 하지 않아도 된다
