@@ -1106,3 +1106,57 @@ optional.ifPresent(h -> {
   ```
 - java는 오버라이딩하는 메서드에서 하위타입을 리턴해도 오버라이딩으로 인정한다.
   - ex) Object를 리턴하는 대신 PhoneNumber를 리턴하는 것도 인정해준다.  클라이언트에서는 clone이후에 형변환을 하지 않아도 된다
+
+<br>
+
+# 15장, 클래스와 멤버의 접근 권한을 최소화하라
+
+- 캡슐화가 잘 된 컴포넌트가 설계가 잘 된 컴포넌트라고 할 수 있다.
+- 캡슐화의 장점
+  - 시스템 개발속도를 높인다. 여러 컴포넌트를 병렬적으로 개발할 수 있다.
+    - 캡슐화를 위해서는 자연스럽게 인터페이스를 사용
+    - 인터페이스를 사용하는 쪽 / 인터페이스를 구현하는 쪽
+    - 프롬프트 필터링 예시
+  - 시스템 관리비용을 낮춘다.
+    - 인터페이스를 살펴보면 시스템 구성을 파악하기 용이하다
+    - 인터페이스가 있다면 다른 컴포넌트로 교체하기도 쉽다.
+  - 성능최적화에 도움을 준다
+    - 성능 향상에 도움을 주지는 않는다.
+    - 성능에 병목이 되는 모듈을 빠르게 파악할 수 있어 최적화에 도움을 준다.
+  - 소프트웨어 재사용성을 높인다.
+  - 개발 난이도를 낮춘다.
+  
+<br>
+
+> p24, 한 클래스에서만 사용하는 package-private 톱레벨 클래스나 인터페이스는 이를 사용하는 클래스 안에 private static으로 중첩시켜보자.
+
+- Q. 왜 private class가 아닌 private static class일까?
+-
+  <details>
+  <summary>정답</summary>
+
+  <!-- summary 아래 한칸 공백 두어야함 -->
+  - private class는 outer class에 대한 참조를 갖고 있기 때문이다.
+  - 서로 독립적이여야 하는 두 클래스가 원래 의도이므로 private static을 사용한다.
+  - 코드
+
+    ```java
+    class OuterClass{
+      private String name;
+
+      private static class InnerClassA{
+
+      }
+      private class InnerClassB{
+        //메서드 작성시 name 필드에 자유롭게 접근가능. 이는 서로 독립적인 클래스가 아닌 의존적
+      }
+    }
+    ```
+
+  </details>
+
+## 멤버의 접근제어자 원칙
+
+- private, package-private은 내부 
+- protected, public은 외부공개용, API
+

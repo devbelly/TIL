@@ -2797,3 +2797,99 @@ public static void logic(EntityManager em) {
     anotherService.method();
     ```
 
+# 14장, 컬렉션과 부가기능
+
+## 컬렉션
+
+- 자바에서 사용하는 컬렉션의 종류는 Collection, List, Set, Map 등이 있다.
+- 하이버네이트는 자바 컬렉션을 그대로 사용하는 것이 아닌 내장 컬렉션으로 래핑한 후 사용한다.
+- 위 이유로 컬렉션 필드는 엔티티 작성시 즉시 초기화 하는 것이 좋다. `private List<Member> members = new ArrayList<>();`
+
+### Collection, List
+
+- 래퍼클래스로 PersistentBag을 사용한다.
+- 중복허용, 순서없음
+- 리스트에 엔티티를 추가하더라도 지연 로딩된 컬렉션을 초기화 하지 않는다.
+
+### Set
+
+- 래퍼클래스로 PersistentSet을 사용한다
+- 중복허용안함, 순서없음
+- Set에 엔티티를 추가하면 중복검사를 위해 equals와 hashCode를 사용한다.
+  - Set에 엔티티를 추가하면 지연 로딩된 컬렉션을 초기화한다.(중복 방지를 위해 원소들을 확인해야하기 때문이다)
+
+**@OrderColumn**의 단점
+- Team : Member = 1 : N 상황, Team의 members 필드에 @OrderColumn이 있다고 가정
+- 일대다 테이블의 특성 때문에 `@OrderColumn(name = "POSITION")`을 Team에 작성했다 하더라도 POSITION 컬럼은 Member 테이블에 저장된다.
+  - 이 이유로 Member은 Position 컬럼에 대한 정보를 모르고 오직 `team.members`에 접근해야지 POSITION 컬럼에 대한 update sql이 발생한다.
+- 순서가 존재하므로 리스트의 두번째 값을 제거했다면 그 뒤에있는 값들의 POSITION이 변경되어야한다. 즉 추가적인 SQL이 발생
+- 위 단점들로 인해 실무에서는 OrderBy를 선호한다
+
+## 엔티티 그래프
+
+- 연관 엔티티를 가져올때는 글로벌 패치전략 EAGER을 사용하거나 패치조인을 사용할 수 있다.
+- 실무에서 EAGER은 변경가능성이 낮고 애플리케이션 전체에 영향을 주므로 패치조인을 사용한다.
+- 패치조인은 비슷한 쿼리를 여러개 작성한다는 단점이 있다.
+  - `select o from Order o join fetch o.member`
+  - `select o from Order o join fetch o.orderItems`
+- 이 원인은 JPQL이 데이터 조회 + 연관 엔티티 조회 두가지 기능을 수행하기 때문이다.
+- JPA 2.1 부터 도입된 엔티티 그래프 기능을 통해 기능을 분리하자.
+
+
+### NamedEntityGraph
+
+- 코드
+  
+  ```java
+  @NamedEntityGraph(
+        name="Team.withMember",
+        attributeNodes = {
+                @NamedAttributeNode("members")
+        }
+  )
+  public class Team {
+      @Id @GeneratedValue
+      private Long id;
+
+      private String teamName;
+
+      @OneToMany(mappedBy = "team")
+      private List<Member> members = new ArrayList<>();
+  }
+  ```
+
+- Team을 조회할 때 객체 그래프로 Member도 설정했으므로 Lazy로 설정했을지라도 members도 같이 조회하게 된다.
+- 사용
+  
+  ```java
+  //1. em.find에서 EntityGraph를 사용하는 방법
+  EntityGraph graph = em.getEntityGraph("Team.member");
+
+  Map hints = new HashMap();
+  hints.put("javax.persistence.fetchgraph",graph);
+
+  Member member = em.find(Member.class,1L,hints)
+  ```
+
+- Member에서 Team도 객체 그래프로 같이 조회할 때 `em.find()`를 사용한다면 inner join이 사용된다.
+
+  - JPQL으로 EntityGraph를 탐색하면 outer join이 사용된다.(만약 싫다면 fetch join을 명시하자.)
+
+### 동적 엔티티 그래프
+
+- `em.createEntityGraph()`를 사용하자
+- 코드
+
+  ```java
+  EntityGraph<Member> graph = em.createEntityGraph(Member.class);
+  graph.addAttributeNodes("team");
+
+  Map hints = new HashMap();
+  hints.put("javax.persistence.fetchgraph",graph);
+
+  Member findMember = em.find(Member.class,1L,hints);
+  ```
+
+- fetchgraph vs loadgraph
+  - fetchgraph는 `addAttributeNode`로 추가한 속성만 가져온다
+  - loadgraph는 추가한 속성뿐만 아니라 fetch.EAGER까지 가져온다.  
