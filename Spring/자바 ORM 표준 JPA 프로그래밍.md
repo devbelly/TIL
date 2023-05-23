@@ -2893,3 +2893,207 @@ public static void logic(EntityManager em) {
 - fetchgraph vs loadgraph
   - fetchgraph는 `addAttributeNode`로 추가한 속성만 가져온다
   - loadgraph는 추가한 속성뿐만 아니라 fetch.EAGER까지 가져온다.  
+
+<br>
+
+# 15장, 고급 주제와 성능 최적화
+
+## 엔티티 비교
+
+- Test 클래스에 @Transactional을 사용하면 메서드 종료시 플러시를 하지 않고 데이터베이스에 커밋도 하지 않는다.
+  - 실행되는 로그를 보고 싶다면 강제로 `em.flush()`를 호출하자.
+- @Transactional이 겹쳐서 사용된다면?
+  - 예시
+  
+    ```java
+    @Transactional
+    method {
+      //@Transactional
+      method2()
+    }
+    ```
+  
+  - 여러가지 전략이 있지만 Propagation.REQUIRED 전략을 기본으로 사용한다.
+    - 사용중인 트랜잭션이 있다면 해당 트랜잭션에 참여하고
+    - 사용중인 트랜잭션이 없다면 새로운 트랜잭션을 시작한다.
+
+- 동일성 비교는 같은 영속성 컨텍스트에 존재하는 엔티티끼리 가능
+- 서로 다른 영속성 컨텍스트 끼리 비교할 경우 비즈니스키를 활용해 equals 비교를 하자.  
+
+## 프록시 심화주제
+
+### 영속성 컨텍스트와 프록시
+
+- 이전에 살펴봤듯, 동일한 영속성 컨텍스트 내에서는 엔티티 동일성을 보장함을 확인했다.
+- 프록시로 조회한 후 원본 객체를 조회하면 프록시가 조회된다.
+  
+  ```java
+  public static void logic(EntityManager em) {
+
+    Member member = new Member();
+    em.persist(member);
+
+    em.flush();
+    em.clear();
+
+    Member refMember = em.getReference(Member.class,1L);;
+    Member findMember = em.find(Member.class,1L);
+
+    System.out.println(refMember.getClass());
+    System.out.println(findMember.getClass());
+    System.out.println(refMember==findMember);
+  }
+  ```
+
+  결과
+  ```java
+  class jpabook.start.Member$HibernateProxy$EXIylM7v
+  class jpabook.start.Member$HibernateProxy$EXIylM7v
+  true
+  ```
+
+## 성능 최적화
+
+### N+1 문제
+
+- Member : Order = 1 : N 인 상황
+- 코드
+
+  ```java
+  public class Member {
+    @Id @GeneratedValue
+    private Long id;
+
+    @OneToMany(mappedBy = "member", fetch = FetchType.EAGER)
+    private List<Order> orders = new ArrayList<>();
+  }
+
+  public class Order {
+    @Id
+    private Long id;
+
+    @ManyToOne
+    private Member member;
+  }
+  ```
+
+- `em.find(Member.class,1L)`을 하면 글로벌 패치 전략 EAGER에 따라 단 한번의 쿼리로 잘 가져온다.
+
+  <img width="497" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/9ab931ed-f112-4fca-8662-0a39588dd833">
+
+- 문제는 JPQL을 사용할 때 발생한다. `em.createQuery(~)`를 사용하면 어떻게 될까?
+
+  <img width="401" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/58a79369-865c-4986-a2a1-a2996322fcda">
+
+  - JPQL은 작성한 SQL 문법을 기반으로 쿼리를 생성하기 때문에 글로벌 패치 전략을 무시하고 작성한다.
+  - EAGER이 나중에 작동, 하나의 회원에 연관된 ORDER를 가져오기 위해 추가 쿼리가 발생
+  - 만약 회원이 한명이 아니라 5명? 아래처럼 총 5개의 쿼리가 발생한다.
+
+    <img width="1533" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/1f9cae04-dea7-4d1d-91b6-27619583d100">
+
+- 처음 실행한 SQL의 결과수만큼 추가 쿼리를 발생하는 문제가 N+1 문제
+- 지연로딩으로 설정하더라도 추가 쿼리가 나중에 발생할 뿐 피할 수 없는 문제이다.
+
+### 해결책
+
+- fetch join
+- batch size
+  
+  - `@BatchSize`를 사용하면 IN 절을 통해 쿼리 횟수를 줄일 수 있다.
+  - 예를 들어 Member가 10명이라면 추가 쿼리가 10번 발생
+  - BatchSize를 5로 설정하면 추가쿼리가 2번만 발생한다.
+
+    <img width="1594" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/c7cb58cf-a9aa-46cf-bb69-3805d2b2bf42">
+
+- subquery
+
+  - @Fetch(FetchMode.SUBSELECT) 를 사용하면 서브쿼리를 통해 연관 데이터를 가져온다.
+
+- 모든 연관관계를 LAZY로 설정하고 필요할때만 fetch join을 사용해서 가져오도록 하자.
+
+### 읽기전용쿼리의 성능 최적화
+
+- 엔티티가 영속성 컨텍스트에서 관리되면 얻을 수 있는 이점이 많다.
+- 하지만 그만큼 영속성 컨텍스트에서 관리해야하는 것이 많다. 
+  - 예를 들어 변경감지를 사용하기 위해선 스냅샷을 저장, 메모리를 더 사용해야한다.
+- 최적화 방법
+  - 스칼라 타입으로 조회, 엔티티를 조회한 것이 아니므로 영속성 컨텍스트에 저장하지 않는다.
+  - `setHint`에 readOnly를 추가
+  - `@Transactional(readOnly)`
+    - FLUSH 모드를 manual로 설정한다.(직접 flush를 호출하기 전까지 실행되지 않음)
+    - flush만 안하므로 스냅샷은 가지고 있다. 단지 비교만 안할뿐
+    
+
+> 하이버네이트 세션
+
+- JPA 엔티티 매니저는 AUTO, COMMIT 모드를 지원하고 MANUAL을 지원하지 않지만 하이버네이트 세션은 MANUAL을 지원한다.
+- 사용자가 flush를 호출하기 전까지는 플러시가 발생하지 않는다.
+- 하이버네이트 세션은 JPA 엔티티 매니저를 하이버네이트로 구현한 것.
+  - `entityManager.unwrap(Session.class)` 로 구할 수 있다.
+
+<br>
+
+**정리**
+- 메모리를 절약하는 방법
+  - 스칼라 타입을 조회
+  - 읽기전용 쿼리 힌트 사용
+- flush를 하지 않아서 최적화
+  - 읽기 전용 트랜잭션 사용
+  - 트랜잭션 밖에서 읽기
+- 스프링에서는 읽기 전용 쿼리 힌트 + 읽기 전용 트랜잭션을 사용한다.
+
+### 배치처리
+
+- 수만건 이상의 데이터를 영속성 컨텍스트에서 동시에 관리하면 메모리 부족 문제가 발생
+- 적절한 단위로 끊어서 `em.flush()`, `em.clear()`를 해야한다.
+
+**배치 수정**
+
+- 많은 데이터를 조회한 후 수정
+- 페이징 방식과 커서 방식이 있다.
+- 페이징 방식
+
+  코드
+  ```java
+  int pageSize = 1000;
+  for(int i=0;i<100_000/pageSize;++i){
+      List<Member> lists = em.createQuery("select m from Member m")
+              .setFirstResult(i*pageSize)
+              .setMaxResults(pageSize)
+              .getResultList();
+
+      for(Member ret : lists){
+          ret.setAge(20);
+      }
+
+      em.flush();
+      em.clear();
+  }
+  ```
+
+- 스크롤방식
+  - 하이버네이트 세션 기능이므로 unwrap 사용, 추후 공부
+
+### 하이버네이트 무상태 세션
+
+- 영속성 컨텍스트가 없고 2차 캐시도 없다.
+- 즉, 영속성 컨텍스트를 초기화하거나 플러시할 필요도 없다
+- 수동적으로 update 메서드를 호출해야한다.
+
+### 트랜잭션 단위의 쓰기 지연 장
+
+- 개발의 편의성 증가
+- 한번의 네트워크 통신 수만건의 메서드를 호출하는 것만큼 굉장히 무거운 연산
+  - 네트워크 통신 횟수를 줄여준다.
+- 가장 중요한 것은 데이터베이스 로우에 걸리는 락을 최소화 하는 것
+
+  코드
+  ```
+  update(member);
+  logicA();
+  logicB();
+  commit();
+  ```
+
+  - JPA를 사용하지 않았다면 `update(member)`에서 락을 걸고 commit 될때까지 락을 유지
+  - JPA 쓰기 지연을 사용했다면 commit 직전에 update를 실행해서 락이 걸리는 시간을 최소화한다.
