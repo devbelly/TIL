@@ -3097,3 +3097,6 @@ public static void logic(EntityManager em) {
 
   - JPA를 사용하지 않았다면 `update(member)`에서 락을 걸고 commit 될때까지 락을 유지
   - JPA 쓰기 지연을 사용했다면 commit 직전에 update를 실행해서 락이 걸리는 시간을 최소화한다.
+
+<br>
+

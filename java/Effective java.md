@@ -1160,3 +1160,6 @@ optional.ifPresent(h -> {
 - private, package-private은 내부 
 - protected, public은 외부공개용, API
 
+>p98, 상위 클래스의 메서드를 재정의 할 때는 그 접근 수준을 상위 클래스 보다 좁게할 수 없다. (리스코프 치환원칙)
+
+- 
