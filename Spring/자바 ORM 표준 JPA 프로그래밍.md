@@ -3054,22 +3054,22 @@ public static void logic(EntityManager em) {
 - 페이징 방식
 
   코드
-  ```java
-  int pageSize = 1000;
-  for(int i=0;i<100_000/pageSize;++i){
-      List<Member> lists = em.createQuery("select m from Member m")
-              .setFirstResult(i*pageSize)
-              .setMaxResults(pageSize)
-              .getResultList();
-
-      for(Member ret : lists){
-          ret.setAge(20);
-      }
-
-      em.flush();
-      em.clear();
-  }
-  ```
+	```java
+	int pageSize = 1000;
+	for(int i=0;i<100_000/pageSize;++i){
+	  List<Member> lists = em.createQuery("select m from Member m")
+			  .setFirstResult(i*pageSize)
+			  .setMaxResults(pageSize)
+			  .getResultList();
+	
+	  for(Member ret : lists){
+		  ret.setAge(20);
+	  }
+	
+	  em.flush();
+	  em.clear();
+	}
+	```
 
 - 스크롤방식
   - 하이버네이트 세션 기능이므로 unwrap 사용, 추후 공부
@@ -3100,3 +3100,114 @@ public static void logic(EntityManager em) {
 
 <br>
 
+# 16장. 트랜잭션과 락 2차 캐시
+
+## 트랜잭션과 격리 수준
+
+- 트랜잭션은 ACID를 제공해야한다.
+- 이 중 I는 격리를 의미한다. 동시에 실행되는 트랜잭션을 제한한다
+
+#### 격리수준에 따른 문제
+
+- READ UNCOMMITTED
+	- A 트랜잭션에서 수정중인 데이터를 커밋하기 이전에 B 트랜잭션이 접근해서 값을 읽을 수 있다
+	- A 트랜잭션이 롤백되면 데이터 정합이 깨지게 된다.
+	- 이 문제점은 Dirty Read라고 한다.
+- READ COMMITTED
+	- A 트랜잭션이 회원 1을 조회중
+	- B 트랜잭션이 중간에 회원 1에 대한 정보를 수정 후 커밋한다.
+	- A 트랜잭션이 다시 회원 1을 조회하면 동일한 트랜잭션 내에서 다른 데이터를 읽게 된다
+	- Non - repeatable Read 문제
+- REAPEATABLE READ
+	- A 트랜잭션이 나이가 10살 이하인 회원을 조회중
+	- B 트랜잭션이 5살 회원을 추가한 후 커밋
+	- A 트랜잭션이 다시 나이가 10살 이하인 회원을 조회하면 맨 처음 조회한 결과집합과 다르다
+	- 반복조회시 결과집합이 달라지는 문제를 PHANTOM READ라고 한다.
+- SERIALIZABLE
+	- 위 문제들이 발생하지 않는 가장 엄격한 상태
+	- 성능이 굉장히 낮아진다.
+
+### @Version
+
+- JPA 제공하는 버전 관리, 낙관적 락을 사용한다.
+- 낙관적 락은 대부분의 트랜잭션이 충돌이 일어나지 않는다고 가정한다.
+	- 트랜잭션 커밋 시점에 충돌 여부를 확인할 수 있다.(@Version 예시를 생각해보자)
+- 엔티티의 값을 변경하면 버전이 자동적으로 변경된다
+- 벌크 연산은 버전 필드를 강제적으로 증가시켜야한다.
+
+### JPA 낙관적 락
+
+- JPA가 제공하는 낙관적 락은 버전(@Version)을 사용
+- 트랜잭션을 커밋하는 시점에 충돌을 알 수 있다
+
+**옵션**
+- NONE
+	- 조회~수정까지 엔티티가 변경되지 않음을 보장
+	- 수정시 버전을 체크하면서 증가
+	- 두 번의 갱신 분실 문제를 해결(최초만 인정함으로써)
+- OPTIMISTIC
+	- 조회~트랜잭션 종료까지 엔티티가 변경되지 않음을 보장
+		- 이 말은 굳이 수정을 하지 않더라도 버전 정보를 확인한다는 말. 수정을 하지 않아도 버전 정보를 확인한다.
+		- 트랜잭션을 커밋할 때 SELECT 쿼리를 사용해서 현재 엔티티와 버전이 같은지 확인한다
+	```java
+	Member findMember = em.find(Member.class,1L,LockModeType.OPTIMISTIC);  
+	System.out.println("logic end");
+	
+	//Hibernate: select member0_.id as id1_3_0_, member0_.age as age2_3_0_, member0_.version as version3_3_0_ from Member member0_ where member0_.id=?
+	//logic end
+	//Hibernate: select version as version_ from Member where id =?
+	```
+	- DIRTY READ와 NON-REPEATABLE READ 문제를 해결한다
+
+**NONE vs OPTIMISTIC**
+
+- NONE은 업데이트를 하는 시점에 버전정보를 확인한다
+
+	```java
+	Member findMember = em.find(Member.class,1L);  
+	findMember.setAge(20);
+	```
+	
+	결과
+	
+	```
+	Hibernate: select member0_.id as id1_3_0_, member0_.age as age2_3_0_, member0_.version as version3_3_0_ from Member member0_ where member0_.id=?
+	Hibernate: update Member set age=?, version=? where id=? and version=?
+	```
+
+	- 만약 `findMember.setAge(20)` 를 작성하지 않았다면 마지막 update에서 버전정보를 확인하지 않았다
+- OPTIMISTIC은 엔티티를 조회함과 동시에 버전정보를 확인한다
+
+- OPTIMISTIC_FORCE_INCREMENT
+	- 엔티티의 논리적 단위 관리가능
+	- 엔티티를 수정하지 않더라도 강제로 버전정보를 증가시킬 수 있다.
+
+### JPA 비관적 락
+
+- 데이터베이스 트랜잭션 락 매커니즘에 의존한다.
+- SQL에 `select update for` 사용. 대부분 버전 정보를 사용하지 않는다
+- 주로 PESSIMISTIC_WRITE 모드를 사용한다.
+- 스칼라 타입에도 적용가능하며 데이터를 수정하는 즉시 알아차릴 수 있다.
+
+## 2차 캐시
+
+- 네트워크를 통해 데이터베이스에 통신하는 비용 vs 서버에서 메모리에 접근하는 비용. 당연히 전자가 훨씬 비싸다
+- JPA는 트랜잭션 범위의 영속성 컨텍스트를 제공한다. 이를 1차캐시라고 한다. 하지만 획기적으로 데이터베이스 접근을 줄이지는 못한다.
+- 1차 캐시는 끄고 켤 수 있는 옵션이 아니다. 특징은 다음과 같다.
+	- 같은 엔티티라면 해당 객체를 그대로 반환. 객체 동일성을 보장한다.
+	- 영속성 범위의 캐시
+- 2차 캐시 작동방식
+	- 영속성 컨텍스트에 엔티티가 없으면 2차 캐시 조회
+	- 2차 캐시에 존재하지 않으면 데이터베이스 조회후 2차 캐시에 저장
+	- 조회한 객체의 복사본을 영속성 컨텍스트에 돌려준다
+		- 객체 동일성을 보장하지 않음!
+
+### 하이버네이트와 EHCACHE
+
+- 하이버네이트가 제공하는 캐시
+	- 엔티티 캐시
+		- 엔티티 단위로 캐시. 엔티티와 컬렉션이 아닌 연관 엔티티 조회시 사용한다.
+	- 컬렉션 캐시
+		- 엔티티와 연관된 컬렉션을 캐시한다. 컬렉션이 엔티티를 담고 있으면 식별자 값만 캐시
+	- 쿼리 캐시
+		- 쿼리와 파라미터 정보를 키로해서 캐시. 값이 엔티티면 식별자 값만 캐시
