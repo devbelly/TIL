@@ -1166,3 +1166,48 @@ optional.ifPresent(h -> {
 > - 하지만 `모듈-모듈아님` 관계에서는 일반적인 `public`, `protected` 처럼 접근이 가능해지므로 주의하자
 
 
+# 16장. public 클래스에서는 public 필드가 아닌 접근자 메서드를 사용하라
+
+- Bad case
+	```java
+	public class Point{
+		public double x;
+		public double y;
+	}
+	```
+
+	- 필드에 직접 접근하면 불변식을 보장할 수 없다.
+	- 부수 작업을 수행할 수 없다.
+
+- Good case
+	```java
+	class Point{
+		private double x;
+		private double y;
+
+		public void setX(double candX){
+			if(candX>=100.0){
+				throw IllegalArgumentException();
+			}
+			this.x = candX;
+		}
+		// setY, getX, getY 등
+	}
+	```
+	- 부수 작업을 수행함으로써 불변식을 보장할 수 있다.
+
+- public class에서 bad case처럼 작성하면 public 필드에 접근하는 클라이언트들이 생기게 된다.
+- package-private class에서는 bad case처럼 작성해도 문제가 없다.
+
+> [!note] p103. 내부를 노출한 Dimension 클래스의 심각한 성능문제는 오늘날까지도 해결되지 못했다.
+> - 가변 객체를 사용하려면 프로그램의 동작 수행을 보장하기 위해 복사해서 사용한다
+> - 만일 메서드 내에서 복사해서 사용하지 않는다면 `myLogic` 수행 시 `dim.witdh`값을 보장할 수 없다
+> 	```java
+> 	Dimension dim = new Dimension(10,20);
+> 	methodA(dim);
+> 	myLogic(dim.width);
+> 	...
+> 	```
+> - 복사가 자주 일어나면 성능문제로 직결된다
+
+
