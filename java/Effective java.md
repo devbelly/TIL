@@ -1211,9 +1211,7 @@ optional.ifPresent(h -> {
 > - 복사가 자주 일어나면 성능문제로 직결된다
 
 
-# 17장. 
-
-
+# 17장. 변경가능성을 최소화하라
 
 - 클래스를 불변으로 만드는 방법
 	- 객체의 상태를 변경할 수 있는 메서드를 제공하지 않는다.
@@ -1281,3 +1279,38 @@ optional.ifPresent(h -> {
 > private int hashCode;
 > ```
 > - hashCode를 사용하는 시점에만 계산을 하고 이후에는 캐싱된 hashCode를 사용하자
+
+# 18장. 상속보다는 컴포지션을 사용하라
+
+- 다른 패키지의 구체 클래스를 상속하는 일은 위험하다.
+	- 내부가 어떻게 구현되어있는지 파악하고 구현을 하게 되므로 캡슐화가 깨진다
+	- 다른 패키지의 상위 클래스 구현이 바뀌면?
+
+- 책 예시(pdf+)
+	```java
+	public boolean addAll(Collection<? extends E> c) {  
+	    boolean modified = false;  
+	    Iterator var3 = c.iterator();  
+	  
+	    while(var3.hasNext()) {  
+	        E e = var3.next();  
+	        if (this.add(e)) {  
+	            modified = true;  
+	        }  
+	    }  
+	  
+	    return modified;  
+	}
+	```
+
+> [!faq]- `this.add(e)`에서 오버라이딩한 add가 호출되는 이유?
+> - dynamic dispatcher
+> - 정의
+> >Single dispatch is a way to choose the implementation of a method based on the receiver runtime type
+> - receiver인 this가 런타임에 가리키는 객체는 InstrumentedHashSet이므로 해당 클래스 내에서 구현한 메서드가 사용된다!
+
+- 책에서 언급한 addCount가 제대로 기록되지 않는 문제 해결을 위해 `addAll`을 사용하지 않는 것도 내부 구현을 알고 있다는 가정
+- 상위 클래스에 새로운 메서드가 추가된다.
+	- 오버라이딩이 강제는 아니므로 알아차리기도 어려울뿐더러
+	- 만일 보안적인 문제로 추가되는 원소에 제한을 둬야하는 상황이면 관련된 모든 메서드를 오버라이딩 해야한다.
+- 결론은 상위 클래스의 변화에 취약하므로 컴포지션을 사용하자
