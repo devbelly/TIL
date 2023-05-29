@@ -1219,7 +1219,7 @@ optional.ifPresent(h -> {
 	- 모든 필드를 final로 선언한다.
 	- 모든 필드를 private으로 선언한다.
 	- 자신 외에는 내부의 가변 컴포넌트에 접근하지 않도록 한다.
-		- 방어적 복사를 통해 제공()
+		- 방어적 복사를 통해 제공 
 
 > [!faq]- 클래스를 확장하면 어떤 문제가 발생할까?
 > - 서브 클래스는 가변적인 객체로 설정할 수 있다
@@ -1304,7 +1304,7 @@ optional.ifPresent(h -> {
 	```
 
 > [!faq]- `this.add(e)`에서 오버라이딩한 add가 호출되는 이유?
-> - dynamic dispatcher
+> - dynamic dispatch
 > - 정의
 > >Single dispatch is a way to choose the implementation of a method based on the receiver runtime type
 > - receiver인 this가 런타임에 가리키는 객체는 InstrumentedHashSet이므로 해당 클래스 내에서 구현한 메서드가 사용된다!
@@ -1314,3 +1314,4 @@ optional.ifPresent(h -> {
 	- 오버라이딩이 강제는 아니므로 알아차리기도 어려울뿐더러
 	- 만일 보안적인 문제로 추가되는 원소에 제한을 둬야하는 상황이면 관련된 모든 메서드를 오버라이딩 해야한다.
 - 결론은 상위 클래스의 변화에 취약하므로 컴포지션을 사용하자
+
