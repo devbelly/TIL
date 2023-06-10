@@ -1380,3 +1380,101 @@ optional.ifPresent(h -> {
 - 상수 전용 클래스나 enum을 통해서 해결하자
 
 # 23. 태그 달린 클래스보다는 클래스 계층 구조를 활용하라
+
+- 태그 달린 필드
+	- 두 가지 이상을 의미할 수 있다 + 현재 의미하는 바를 필드로 표현
+	- `Figure` 클래스에 `Shape` enum을 사용하여 현재 객체가 무엇인지 표현
+- 단점
+	- 불필요한 코드
+	- 필요없는 필드의 초기화
+	- 컴파일러의 도움을 받기 어려움
+	- 메모리 문제
+- 결론
+	- 사용하지 말자
+
+> [!info] DDD에서 응용 계층의 서비스 로직 구현 시 고려할 점
+> - `MemberService` 를 의미
+> - 쟁점
+> 	- 도메인 로직을 하나의 서비스 클래스에 모두 구현 → `MemberService`에 모두 구현
+> 	- 도메인 로직을 여러 클래스로 나누어 구현 → `MemberChangePasswordService`, `MemberVerficiationService`등등
+
+
+# 24. 멤버 클래스는 되도록 static을 사용하자
+
+정적 멤버 클래스
+- 바깥 클래스와 함께 쓰일 때만 유용한 public class 도우미로 쓰인다
+- Builder 클래스
+> [!info] SpecBuilder
+> - JPA에서 여러 검색 조건에 따라 쿼리를 생성하기 위해 `Specification`을 지원한다.
+> - 예시
+> 	- 검색 조건으로 가격, 위치, 기간
+> 	- 세 파라미터를 기준으로 가능한 메서드들의 조합을 모두 작성할 수 없다.
+> 	- 이 문제를 해결하기 위해 `Specification`을 사용
+
+비정적 멤버 클래스
+- 비정적 멤버 클래스의 인스턴스는 바깥 클래스와 암묵적으로 연결된다 → `OuterClass.this` 사용가능
+- 어떤 클래스의 인스턴스를 감싸 다른 클래스의 인스턴스처럼 보이게 할 때 자주 사용된다
+
+<img width="1132" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/14e15f1a-c04a-4819-90d9-5ab1e7a977f5">
+- HashMap 안에 구현되어있는 KeySet 비정적 클래스
+- 두번째 줄에 처음에 언급한 정규화된 this를 사용하는 것도 볼 수 있다.
+- 세번째 줄에서 Adapter Pattern이 적용된 것을 볼 수 있다.
+	- p147. “어떤 클래스의 인스턴스를 감싸 다른 클래스의 인스턴스처럼 보이게 하는 것이다”
+	- 비정적 멤버 클래스인 `KeyIterator`를 다른 클래스의 인스턴스처럼 보이게 했다.
+
+> p148. private 정적 멤버 메서드는 흔히 바깥 클래스가 표현하는 객체의 한 부분(구성요소)를 나타낼 때 사용한다
+
+```java
+// HashMap.class 코드 중 일부
+static class Node<K,V> implements Map.Entry<K,V> {  
+    final int hash;  
+    final K key;  
+    V value;  
+    Node<K,V> next;  
+  
+    Node(int hash, K key, V value, Node<K,V> next) {  
+        this.hash = hash;  
+        this.key = key;  
+        this.value = value;  
+        this.next = next;  
+    }  
+  
+    public final K getKey()        { return key; }  
+    public final V getValue()      { return value; }  
+    public final String toString() { return key + "=" + value; }  
+  
+    public final int hashCode() {  
+        return Objects.hashCode(key) ^ Objects.hashCode(value);  
+    }  
+  
+    public final V setValue(V newValue) {  
+        V oldValue = value;  
+        value = newValue;  
+        return oldValue;  
+    }  
+  
+    public final boolean equals(Object o) {  
+        if (o == this)  
+            return true;  
+  
+        return o instanceof Map.Entry<?, ?> e  
+                && Objects.equals(key, e.getKey())  
+                && Objects.equals(value, e.getValue());  
+    }  
+}
+```
+
+- 많은 Map 구현체는 키-값 쌍을 표현하는 엔트리 객체를 가지고 있다 → `implements Map.Entry`
+- `getKey`, `getValue`는 `HashMap`의 메서드를 사용하지 않는다 → `HashMap.this`가 존재하지 않음
+- 따라서 엔트리를 비정적 클래스로 사용하는 것은 낭비, private 정적 클래스가 가장 어울린다.
+
+- 익명 클래스
+	- 람다로 대체되어 가는중
+	- 람다로 표현이 불가능할 때 사용한다. (메서드가 여러개 있는 경우, 정적 팩터리 메서드)
+
+# 25. 톱레벨 클래스는 한 파일에 하나만 담아라
+
+- 한 파일에 여러 클래스를 선언하더라도 컴파일러는 아무런 불평을 하지 않지만
+- 톱레벨 클래스 또는 인터페이스는 하나만 사용하자
+- 어떤 파일이 컴파일되는지에 따라 결과가 달라지기 때문이다!
+
