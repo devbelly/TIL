@@ -153,3 +153,51 @@ ENTRYPOINT ["node", "app.js"]
 **파드 조회하기**
 - 컨테이너는 쿠버네티스의 독립적인 오브젝트가 아니다
 - `kubectl get pods`
+
+**백그라운드에서 일어난 동작 이해하기**
+- `docker push devbelly/kubia`
+	- 도커 데몬이 다른 머신에 존재한다면 이미지를 가져오기 위해 레지스트리를 사용해야하므로 저장소에 이미지를 올려둔다
+- `kubectl run kubia --image=luksa/kubia --port=8080`
+	- `kubectl`에게 명령을 전달
+	- `kubectl`은 마스터 노드의 REST API 서버로 명령 전달 + 클러스터에 Replication controller 생성됨
+	- 스케줄러가 파드를 워커노드에 스케줄링
+	- 해당 노드에 있는 `kubelet`은 이미지를 가져와서 컨테이너를 실행한다
+
+> [!info] Replication Controller?
+> - 생성된 Pod를 지속적으로 관리하기 위한 Object이다.
+> - `replicas` : 지정된 숫자로 Pod를 유지한다
+> - `selector` : 지정된 라벨의 Pod를 관리한다
+> - `template` : 추가로 Pod를 기동할 때 사용하는 정보들을 기술한다
+
+> [!info] 클러스터에 Replication controller이 생성 ?
+> - `kubectl run kubia --image=devbelly/kubia --port=8080 --generator=run/v1`
+> - 위 명령어에서 `--generator=run/v1`가 레플리케이션 컨트롤러를 생성
+> - 현재는 deprecated되어 해당 flag를 제외하면 `pod/kubia create`라고 콘솔에 뜨는 것을 확인할 수 있다.
+>   <img width="455" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/f31f07ac-db47-4d31-a10a-87dcbfc9cd65">
+
+### 2.3.2 웹 애플리케이션에 접근하기
+
+- 각 파드는 자체 IP를 가지고 있지만 클러스터 내부에 존재하므로 외부에서 접근하기 어렵다.
+- 서비스를 생성해도 클러스터 내부에서 접속가능하므로 LoadBalancer 타입의 서비스를 생성해야한다
+- `kubectl expose` : 서비스를 생성하여 리소스를 외부로 노출하는 역할을 한다.
+
+**서비스 오브젝트 생성하기**
+- `kubectl expose rc kubia --type=LoadBalancer --name kubia-http`
+- 위에서 `replication controller`를 생성하지 않았으므로 파드를 외부로 노출하자
+
+**파드와 컨테이너의 이해**
+- 파드는 여러 개의 컨테이너를 가질 수 있다.
+- 파드는 고유한 사설 IP 주소와 호스트 이름을 갖는다 → `app.js`의 `os.hostname`을 호출해도 워커노드 대신 고유한 호스트 이름이 출력됨을 확인할 수 있다. (교재에서는 kubia-4jfyf)
+- 파드에 대한 자세한 정보를 알고 싶다면 `kubectl get pods -o wide` 를 사용할 수 있다.
+	- 파드가 어떤 노드에 스케줄링 되어있는지 확인할 수 있다!
+
+**레플리케이션컨트롤러의 역할 이해**
+- `replicas`로 지정한 숫자만큼 pod를 띄우도록 돕는다
+
+**서비스가 필요한 이유**
+- 파드는 일시적이다
+- 파드는 불완전한 노드가 삭제되면 같이 삭제될 수 있고 누군가에 의해 없이질 수도 있다.
+- 레플리케이션 컨트롤러가 이를 제어해 파드를 `replicas`만큼 유지하도록 다시 생성한다.
+- 이때 생성되는 사설 IP 주소는 계속해서 변경
+	→ 이를 관리하기 위해 서비스가 필요하다!
+
