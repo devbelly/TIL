@@ -201,3 +201,59 @@ ENTRYPOINT ["node", "app.js"]
 - 이때 생성되는 사설 IP 주소는 계속해서 변경
 	→ 이를 관리하기 위해 서비스가 필요하다!
 
+# 3장. 파드 : 쿠버네티스에서 컨테이너 실행
+
+**왜 쿠버네티스는 여러 컨테이너를 관리하는 파드라는 단위가 필요할까?**
+- 선행지식) 컨테이너는 왜 단일 프로세스를 지향할까?
+	- 하나의 컨테이너에서 여러 프로세스를 띄우면
+		- 개별 프로세스의 추적 및 재시작을 직접 관리해야한다.
+		- 표준 출력으로 인해 로깅 추적이 어렵다 → 무슨말인지…?
+- 위 이유로 컨테이너를 관리하는 상위 개념인 파드를 도입한다.
+	- 동시에 실행되어야 하는 컨테이너를 관리하면서도 각 컨테이너의 독립성을 유지할 수 있다.
+
+**파드의 네임스페이스**
+- 기본적으로 네임스페이스는 파드 단위로 공유되지만
+- 파일 시스템에 한해서는 컨테이너 개별적으로 가지고 있다. → 쿠버네티스의 볼륨 시스템으로 파일 디렉터리를 공유할 수도 있다
+
+**컨테이너가 동일한 IP와 포트 공간을 공유하는 방법**
+- 네임스페이스는 여러가지가 존재한다. 그 중 네트워크 네임스페이스라는 것이 존재한다.
+- 같은 파드끼리는 동일한 네트워크 네임스페이스를 공유한다
+	→ 같은 IP와 Port 공간을 공유
+- 위 이유로 동일한 파드 내 컨테이너 끼리는 `localhost:~`로 서로 통신이 가능
+- 포트가 겹치지 않도록 주의해야한다!
+
+**컨테이너 포트 지정**
+- `yaml` 디스크립터를 통해서 Pod를 지정할 수 있다.
+- `spec`에 정의된 `containerPort`는 다른 개발자에게 정보를 제공하기 위한 목적이다
+- 공식 문서에서 그 내용을 확인할 수 있다
+- 또한 포트를 명시적으로 정의하면 이름을 지정하게 편리하게 사용할 수 있다
+
+	> List of ports to expose from the container. Exposing a port here gives the system additional information about the network connections a container uses, but is primarily informational. Not specifying a port here DOES NOT prevent that port from being exposed. Any port which is listening on the default "0.0.0.0" address inside a container will be accessible from the network. Cannot be updated.
+
+**kubectl create 명령으로 파드 만들기**
+- `kubectl create -f kubia-manual.yaml`
+- `yaml`, `json`으로 작성되었다면 위 명령어로 파드  생성 가능
+
+**출력 로그 확인하기**
+- 컨테이너화된 애플리케이션은 파일 대신 표준출력 또는 표준에러를 사용한다
+- `kubectl logs <pod-name>`
+- 하나의 파드에 여러 컨테이너가 존재한다면 `kubectl logs -c <container-name>`
+- 파드가 삭제되면 로그도 삭제됨. 원치 않다면 중앙집중식 로그를 사용해야한다
+
+### 3.2.5 파드에 실제 요청 보내기
+- 2장에서 생성된 파드의 실제 동작을 확인하기 위해 `EXPOSE`를 통해 서비스를 생성
+- 간단한 디버깅 목적을 위해서 서비스를 띄우는 대신 포트 포워딩을 사용하자
+	<img width="389" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/1b6ef23b-43fa-4efe-8001-f106dc94dff8">
+
+## 3.4 레이블 셀럭터를 이용한 파드 부분 집합 나열
+
+- 쿠버네티스의 실제 운영환경은 여러개의 파드(수십~수백)로 이루어져있다.
+- 여러 파드를 관리하기 위해 `키-값`으로 구성된 레이블을 사용
+- 레이블을 추가하는 방법
+	- `yaml`에 작성
+	- 명령어를 통해 추가, 수정(수정시 `--overwrite` 플래그가 필요하다)
+- 레이블은 파드만이 가질 수 있는 것이 아니다! 쿠버네티스 오브젝트라면 가질 수 있다.
+- 만약 특정 노드에 파드를 스케줄링 해야한다면? (인프라에 대한 의존도가 생기긴 한다)
+	- 노드에 `gpu=true` 레이블을 추가한 후
+	- 파드에 `nodeSelector` 설정에 `gpu: "true"` 를 적는다.
+
