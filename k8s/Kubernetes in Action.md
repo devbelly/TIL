@@ -425,8 +425,32 @@ app: kubia
 	- 이전에 파드에서 컨테이너포트를 지정한 것은 개발자를 위한 것이라고 했다
 	- 뿐만 아니라 이름을 지정하여 편리하게 사용할 수 있다고 했는데 지금 이 부분이다
 
+**환경변수를 통한 서비스 검색**
+- 생성한 서비스를 클라이언트 파드에게 일일이 전달하는 대신 검색할 수 있는 기능을 제공한다
+- 파드가 생성되면 해당 시점에 존재하는 서비스에 대한 환경변수를 파드에 저장하게 된다
+	- 즉 파드생성 → 서비스생성시 서비스를 제대로 찾지 못한다
+- `kubectl exec <pod> env`
 
+ **DNS를 통한 서비스 검색**
+ - `kube-system` 네임스페이스에는 `kube-dns`이름의 서비스가 있다
+	<img width="797" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/d0f55608-c88f-4521-99b4-96a596d6b10f">
+- 모든 파드에서 이뤄지는 dns 질의는 `kube-dns`를 사용하도록 설정되어있다
+	- 이는 리눅스 시스템의 `/etc/resolve.conf`를 확인해보면 알 수 있다
+	- <img width="611" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/1dbd0bab-45ca-4ec3-8fe2-4a8185246884">
 
+### 5.2.1 서비스 엔드포인트
+- 서비스는 파드에 직접 연결되지 않는다
+- 서비스와 파드 사이에 엔드포인드가 있다.(엔드포인트도 리소스이다)
+- 파드 셀렉터는 엔드포인트 목록을 만드는데 사용된다
 
-
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+	name: external-service
+spec:
+	ports:
+	- port: 80
+```
+	 
 
