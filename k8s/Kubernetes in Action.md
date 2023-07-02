@@ -543,3 +543,71 @@ spec:
 	- 이러한 이유로 데이터베이스의 용도로 사용하지 않는다
 	- 호스트 노드의 로그, 구성파일, CA 인증서 접근 용도로 사용된다
 
+# 7장. 컨피그맵과 시크릿
+
+## 7.1 컨테이너화된 애플리케이션 설정
+
+- 컨테이너에서 설정 데이터를 전달할 때 환경 변수를 주로 사용한다
+	- 명령어 인자로 전달하거나 파일로 전달하는 것은 애플리케이션에서 하드코딩한 것과 비슷하다
+
+## 7.2 컨테이너에 명령줄 인자 전달
+
+- 도커파일에서…
+- `ENTRYPOINT`는 실행할 명령어를 작성한다.
+	- `shell` 방식 : ENTRYPOINT node app.js
+	- `exec` 방식 : ENTRYPOINT [“node”,“app.js”]
+	- 노드를 실행하는데 쉘을 굳이 실행할 필요는 없으므로 `exec` 방식을 사용하다
+- `CMD`는 ENTRYPOINT에 전달되는 매개변수를 지정한다
+- `fortuneloop.sh`
+
+	```bash
+	...
+	INTERVAL=$1
+	...
+	```
+
+### 7.3.3 하드코딩된 환경변수의 단점
+
+ - 파드정의를 재활용하지 못하고 환경마다 `yaml` 파일을 가지고 있어야한다
+ - 컨피그맵으로 이를 해결할 수 있따
+
+## 7.4 컨피그맵
+
+- 키와 값 쌍으로 이루어진 데이터를 저장하는데 사용
+- 기밀이 아닌 데이터를 저장한다 → 기밀이 필요하다면 시크릿을 사용
+- 파드와 컨테이너는 동일한 네임스페이스에 존재해야한다
+- 📖컨피그맵은 짧은 문자열에서 전체 설정 파일에 이르는 값을 가지는 키/값 쌍으로 구성된 맵이다
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-demo
+data:
+  # 속성과 비슷한 키; 각 키는 간단한 값으로 매핑됨
+  player_initial_lives: "3"
+  ui_properties_file_name: "user-interface.properties"
+
+  # 파일과 비슷한 키
+  game.properties: |
+    enemy.types=aliens,monsters
+    player.maximum-lives=5    
+  user-interface.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true    
+```
+
+- 📖 애플리케이션은 필요한 경우 코버네티스 REST API 엔드포인트를 통해 직접 읽을 수 있지만 반드시 필요한 경우가 아니라면 자제하자
+	- 컨피그맵을 사용하는 방법은 다음과 같다
+		- 컨테이너 커맨드 & 인수
+		- 컨테이너 환경변수
+		- 읽기 전용 볼륨
+		- 쿠버네티스 API
+	- 쿠버네티스 API를 사용하는 방법은 다른 네임스페이스의 컨피그맵에도 접근할 수 있다
+
+**환경변수를 컨피그맵에서 가져오는 예시**
+
+<img width="324" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/44082e1e-a7dd-4540-8f89-5ae145969849">
+- name, value 대신 name, valueFrom을 사용하는 것을 확인할 수 있다
+- 환경변수를 일일이 가져오는 대신 한번에 가져오는 옵션인 `envFrom`은 쿠버네티스 1.6부터 추가되었다.
