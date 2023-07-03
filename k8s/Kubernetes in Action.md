@@ -642,7 +642,53 @@ data:
 
 - 시크릿이 가지고 있는 `ca.crt`, `namespace`, `token`은 파드가 쿠버네티스 API와 통신할 때 사용한다
 
+# 8장. 애플리케이션에서 메타데이터에 엑세스하기
+
+> [!info] container resource vs limit
+> - resource는 파드가 노드에 스케쥴링되는 기준을 정한다(Round Robin을 사용한다)
+> - limit은 파드가 사용할 수 있는 최대 사용량을 의미한다
+
+## 8.1 Downward API로 정보전달하기
+
+- 파드나 컨테이너의 메타데이터는 환경변수 or Downward API 볼륨을 사용해 컨테이너에 전달할 수 있다.
+	- 파드 및 컨테이너 필드를 노출하는 이 두가지 방식을 Downward API라고 한다
+- 환경변수를 사용하는 경우는 파드의 레이블 또는 어노테이션을 전달하지 못한다.
+- 환경변수로 메타데이터를 전달하는 방법
+
+```yaml
+...
+spec:
+	containers:
+		env:
+		- name: POD_NAME
+		  valueFrom:
+			  fieldRef:
+				  fieldPath: metadata.namespace
+...
+```
+
+- Downward API 볼륨으로 메타데이터를 전달하는 방법
+
+<img width="490" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/b2669e18-8255-44dc-990b-54d51fd1c787">
+- 컨테이너의 `/etc/downward` 디렉토리에 `path`로 정의한 파일들이 생성된다
+<img width="719" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/6b572fdb-e7dc-4e8a-9d36-1c3fa0c2741b">
+## 8.2 쿠버네티스 API와 통신하기
+
+- Downward API는 유용하지만 노출할 수 있는 데이터가 제한적이다
+	- 클러스터에 정의된 다른 파드에 대한 정보가 필요하면 → 쿠버네티스 API를 직접 호출하자
+- `kubectl cluster-info`를 입력하면 마스터 노드에 대한 정보가 나온다.
+- 쿠버네티스 API는 `https` 통신만 지원하기 때문에 인증 없이는 접근할 수 없다
+	- `curl <주소> -k`를 입력해도 Forbidden과 같은 메세지를 얻게 됨
+	- 이를 해결하기 위해 쿠버네티스 프록시를 사용할 수 있다.
+	 - `kubeclt proxy` : 사용자 - 프록시는 HTTP로 연결, 프록시 - API 서버는 HTTPS로 연결된다.
+
+> # [Difference between Kubernetes Objects and Resources](https://stackoverflow.com/questions/52309496/difference-between-kubernetes-objects-and-resources)
+> - 클러스터에서 잡 목록을 얻기위해 `/apis/batch/v1/jobs` 리소스를 사용한다
+> - 해당 리소스 안에는 여러 오브젝트들이 포함되어 있다
+
+p370~
+
 ---
-## 확인할 것들
+### 메모
 - 쿠버네티스는 시크릿에 접근해야하는 파드가 실행되고 있는 노드에만 개별 시크릿을 배포해 시크릿을 안전하게 유지한다
 - 노드 자체적으로 시크릿을 메모리에 저장한다
