@@ -686,7 +686,23 @@ spec:
 > - 클러스터에서 잡 목록을 얻기위해 `/apis/batch/v1/jobs` 리소스를 사용한다
 > - 해당 리소스 안에는 여러 오브젝트들이 포함되어 있다
 
-p370~
+### 8.2.2 파드 내에서 API 서버와 통신
+
+- API 서버 주소 찾기
+	- 쿠버네티스는 서비스마다 DNS 엔트리가 있다.
+	- `env`로 조회하지 않아도 `curl https://kubernetes` 와 같이 도메인 네임을 사용해서 접근할 수 있다.
+- 인증방법
+	- 관리자 입장에서 `kubectl`을 사용하는 것은 클라이언트 인증방식을 통해 API server에 접근하는 것이다
+		- `~/.kube/config`의 내용을 요청과 함께 전달하는 것
+	- `kubectl`을 사용하지 못하는 파드는 토큰 인증 방식을 사용한다
+		- 파드가 생성될때 `serviceAccount admission controller`가 `Projected` volume을 생성한다(1.22v)
+		- 해당 볼륨을 컨테이너의 `/var/run/secrets/kubernetes.io/serviceaccount`에 마운트한다
+		- 내용을 살펴보면 `ca.crt`,`namespace`, `token` 이 있는데 여기 `token`을 API server에 해더와 함께 전달한다
+
+**파드가 쿠버네티스와 통신하는 방법**
+- 애플리케이션은 API 서버의 인증서가 인증 기관으로부터 서명되었는지 확인해야한다. 인증 기관의 인증서는 ca.cert 파일에 있다(위 과정을 통해 클라이언트가 서버를 신뢰하게 되었다.)
+- token을 서버로 전달해서 클라이언트를 검증해야한다(이 과정을 통해 서버가 클라이언트를 신뢰)
+
 
 ---
 ### 메모
