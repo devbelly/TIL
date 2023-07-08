@@ -806,7 +806,16 @@ spec:
 - [kube-proxy](https://coffeewhale.com/k8s/network/2019/05/11/k8s-network-02/#fn:2)글을 참고하자.
 
 
-p503~
+**DNS 서버 동작 방식**
+- 클러스터의 모든 파드는 기본적으로 클러스터의 내부 DNS서버를 사용하도록 설정돼 있다.
+- DNS 서버 파드는 `kube-dns` 서비르로 노출된다.
+- `kube-dns`의 IP 주소는 모든 컨테이너의 `/etc/resolv.conf`에 저장되어있다.
+
+	<img width="636" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/2cc94174-7d6a-4f89-a020-5c1e82d70677">
+
+- 서비스와 엔드포인트 변화를 관찰하고 모든 변화를 DNS 레코드에 갱신한다.
+
+p504~
 
 
 ---
