@@ -858,7 +858,35 @@ spec:
 > - 쿠버네티스 최신버전에서는 TokenRequest API를 통해 직접 얻고 프로젝티드 볼륨을 사용해 마운트 된다
 
 
+**RBAC 활성화 시 파드에서 서비스 목록 나열하기**
+- RBAC 비활성화와 비교하기 위해 `curl localhost:8001/api/v1/namespaces/foo/services`를 실행해보자
+  <img width="1283" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/75204f99-22a7-4939-9115-c3c915c34b20">
+	- RBAC 비활성화 일때는 서비스어카운트를 생성만해도 다 접근이 가능했지만 지금은 그렇지 않은 것을 알 수 있다.
+	- minikube에서 `kubectl api-versions` 입력 시 `.rbac.authorization.k8s.io/v1`이 보이는지 확인하면 된다.
+	- 서비스어카운트 사용자 이름은 `system:serviceaccount:<namespace>:<service account name>`이다
+- 서비스어카운트에 리소스에 대한 작업을 활성화 하기위해선 롤과 롤 바인딩을 사용해야한다.
 
+**롤과 롤바인딩**
+- 롤  ? 어떤 리소스에 어떤 verb를 수행할지 결정
+- 롤바인딩 ? 롤과 주체를 연결해주는 리소스 (어카운트 서비스는 주체중 하나이다.)
+- `kubectl create role service-reader --verb=get --verb=list --resource=services -n foo`
+- `kubectl create rolebinding test --role=service-reader --serviceaccount=foo:default -n foo`
+- 위 명령어를 수행한 후 다시 services를 조회해보면 제대로 조회됨을 알 수 있따.
+  <img width="547" alt="image" src="https://github.com/devbelly/TIL/assets/67682840/febca967-02ba-46ad-9b44-7ccbf33685b0">
+
+**클러스터롤과 클러스터롤바인딩**
+- URL 중에서는 네임스페이스가 필요하지 않은 리소스가 있다. (예를 들어 persistent volume, namespace, node)
+- 그리고 URL 중에서는 꼭 리소스만 가리키는 것은 아니다 (예를 들어 /healthz)
+- 위 유형에 대해 접근권한을 관리하기 위해 클러스터롤과 클러스터롤바인딩을 사용할 수 있다.
+	- 네임스페이스가 지정되지 않은 리소스에 대해 클러스터롤 + 롤바인딩을 사용하면 효과가 없다.
+	- 네임스페이스가 지정된 리소스에 대해 클러스터롤 + 롤바인딩은 효과가 있다.
+- 클러스터롤 + 클러스터롤바인딩
+	- 클러스터롤바인딩에 나열된 주체가 모든 네임스페이스의 리소스에 대해 권한을 갖는다.
+- 클러스터롤 + 롤바인딩
+	- 롤바인딩에 나열된 주체가 롤바인딩이 존재하는 네임스페이스에 속한 리소스만 볼 수 있다.
+- 위 이유로 클러스터롤 + 롤바인딩 시 클러스터롤에 클러스터 수준의 리소스를 정의하면 볼 수가 없었던 것이다!..
+
+  
 
 ---
 ### 메모 & 나중에 공부할 내용
